@@ -90,18 +90,22 @@ export default async function RecommendationsPage() {
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
-                      {["Resource", "Team", "Env", "Description", "Savings", "Severity"].map((h) => (
+                      {["Resource", "Team", "Env", "Description", "Savings", "Severity"].map((h, idx, arr) => (
                         <th
                           key={h}
                           style={{
-                            textAlign: h === "Savings" ? "right" : "left",
+                            textAlign: h === "Savings" ? "right" : ["Env", "Severity"].includes(h) ? "center" : "left",
                             fontSize: "10px",
                             fontWeight: 600,
                             fontFamily: "Inter, sans-serif",
                             color: "var(--text-tertiary)",
                             letterSpacing: "0.07em",
                             textTransform: "uppercase",
-                            paddingBottom: "12px",
+                            padding: idx === 0
+                              ? "0 8px 12px 0"
+                              : idx === arr.length - 1
+                              ? "0 0 12px 8px"
+                              : "0 8px 12px 8px",
                             borderBottom: "1px solid var(--border)",
                           }}
                         >
@@ -124,7 +128,7 @@ export default async function RecommendationsPage() {
                         <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
                           {item.team}
                         </td>
-                        <td style={{ padding: "10px 8px" }}>
+                        <td style={{ padding: "10px 8px", textAlign: "center" }}>
                           <SeverityBadge severity={item.env} />
                         </td>
                         <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)", maxWidth: "260px" }}>
@@ -140,7 +144,7 @@ export default async function RecommendationsPage() {
                             <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>—</span>
                           )}
                         </td>
-                        <td style={{ padding: "10px 0 10px 8px" }}>
+                        <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                           <SeverityBadge severity={item.severity} />
                         </td>
                       </tr>

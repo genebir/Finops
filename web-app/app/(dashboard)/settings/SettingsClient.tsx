@@ -1,6 +1,6 @@
 "use client";
 
-import { PencilSimple, Check, X } from "@phosphor-icons/react";
+import { PencilSimple, Check, X, Trash, Plus } from "@phosphor-icons/react";
 import { useCallback, useEffect, useState } from "react";
 
 import { Card, CardHeader, SectionLabel } from "@/components/primitives/Card";
@@ -73,6 +73,12 @@ const inputStyle: React.CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
+const formInputStyle: React.CSSProperties = {
+  ...inputStyle,
+  width: "100%",
+  textAlign: "left",
+};
+
 const iconBtn: React.CSSProperties = {
   padding: "4px",
   border: "none",
@@ -84,12 +90,32 @@ const iconBtn: React.CSSProperties = {
   justifyContent: "center",
 };
 
+const btnPrimary: React.CSSProperties = {
+  padding: "6px 16px",
+  border: "none",
+  borderRadius: "var(--radius-button)",
+  background: "var(--accent)",
+  color: "#fff",
+  fontSize: "12px",
+  fontWeight: 600,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+};
+
 export default function SettingsClient({ initial }: { initial: SettingItem[] }) {
   const [items, setItems] = useState<SettingItem[]>(initial);
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newKey, setNewKey] = useState("");
+  const [newValue, setNewValue] = useState("");
+  const [newType, setNewType] = useState("str");
+  const [newDesc, setNewDesc] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -101,7 +127,6 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
   }, []);
 
   useEffect(() => {
-    // Keep refreshed on mount so client sees latest even after SSR cache
     refresh();
   }, [refresh]);
 
@@ -120,7 +145,45 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
     }
   }
 
-  if (items.length === 0) {
+  async function handleCreate() {
+    if (!newKey.trim() || !newValue.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.createSetting({
+        key: newKey.trim(),
+        value: newValue.trim(),
+        value_type: newType,
+        description: newDesc.trim() || undefined,
+      });
+      setShowAdd(false);
+      setNewKey("");
+      setNewValue("");
+      setNewType("str");
+      setNewDesc("");
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(key: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.deleteSetting(key);
+      setDeleteConfirm(null);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (items.length === 0 && !showAdd) {
     return (
       <Card>
         <EmptyState
@@ -154,6 +217,99 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
         </p>
       )}
 
+      <div style={{ marginBottom: "20px", display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          style={btnPrimary}
+          onClick={() => setShowAdd(!showAdd)}
+        >
+          <Plus size={14} weight="bold" />
+          Add Setting
+        </button>
+      </div>
+
+      {showAdd && (
+        <Card style={{ marginBottom: "20px" }}>
+          <CardHeader>New Setting</CardHeader>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+            <div>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "4px" }}>
+                Key
+              </label>
+              <input
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="e.g. custom.threshold"
+                style={formInputStyle}
+                onKeyDown={(e) => { if (e.key === "Escape") setShowAdd(false); }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "4px" }}>
+                Value
+              </label>
+              <input
+                value={newValue}
+                onChange={(e) => setNewValue(e.target.value)}
+                placeholder="e.g. 2.5"
+                style={formInputStyle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                  if (e.key === "Escape") setShowAdd(false);
+                }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "4px" }}>
+                Type
+              </label>
+              <select
+                value={newType}
+                onChange={(e) => setNewType(e.target.value)}
+                style={{ ...formInputStyle, cursor: "pointer" }}
+              >
+                <option value="str">str</option>
+                <option value="float">float</option>
+                <option value="int">int</option>
+                <option value="bool">bool</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: "4px" }}>
+                Description (optional)
+              </label>
+              <input
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                placeholder="Short description"
+                style={formInputStyle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                  if (e.key === "Escape") setShowAdd(false);
+                }}
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              style={{ ...btnPrimary, background: "transparent", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+              onClick={() => setShowAdd(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              style={btnPrimary}
+              onClick={handleCreate}
+              disabled={saving || !newKey.trim() || !newValue.trim()}
+            >
+              Create
+            </button>
+          </div>
+        </Card>
+      )}
+
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         {sortedGroups.map((group) => (
           <Card key={group}>
@@ -161,9 +317,9 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Key", "Value", ""].map((h) => (
+                  {["Key", "Type", "Value", ""].map((h, idx, arr) => (
                     <th
-                      key={h}
+                      key={h || `action-${idx}`}
                       style={{
                         textAlign: h === "Value" ? "right" : "left",
                         fontSize: "10px",
@@ -172,8 +328,13 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
                         color: "var(--text-tertiary)",
                         letterSpacing: "0.07em",
                         textTransform: "uppercase",
-                        paddingBottom: "12px",
+                        padding: idx === 0
+                          ? "0 8px 12px 0"
+                          : idx === arr.length - 1
+                          ? "0 0 12px 8px"
+                          : "0 8px 12px 8px",
                         borderBottom: "1px solid var(--border)",
+                        width: h === "Type" ? "60px" : h === "" ? "80px" : undefined,
                       }}
                     >
                       {h}
@@ -184,6 +345,7 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
               <tbody>
                 {grouped[group].map((item, i) => {
                   const isEditing = editKey === item.key;
+                  const isDeleting = deleteConfirm === item.key;
                   return (
                     <tr
                       key={item.key}
@@ -201,7 +363,12 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
                           {item.key}
                         </code>
                       </td>
-                      <td style={{ padding: "10px 0", textAlign: "right" }}>
+                      <td style={{ padding: "10px 8px" }}>
+                        <span style={{ fontSize: "10px", color: "var(--text-tertiary)", fontFamily: '"JetBrains Mono", monospace' }}>
+                          {item.value_type}
+                        </span>
+                      </td>
+                      <td style={{ padding: "10px 8px", textAlign: "right" }}>
                         {isEditing ? (
                           <input
                             value={editValue}
@@ -222,8 +389,28 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: "10px 0 10px 8px", width: "70px", textAlign: "right", whiteSpace: "nowrap" }}>
-                        {isEditing ? (
+                      <td style={{ padding: "10px 0 10px 8px", width: "80px", textAlign: "right", whiteSpace: "nowrap" }}>
+                        {isDeleting ? (
+                          <>
+                            <button
+                              type="button"
+                              style={{ ...iconBtn, color: "var(--status-critical)" }}
+                              onClick={() => handleDelete(item.key)}
+                              disabled={saving}
+                              title="Confirm delete"
+                            >
+                              <Check size={16} weight="bold" />
+                            </button>
+                            <button
+                              type="button"
+                              style={iconBtn}
+                              onClick={() => setDeleteConfirm(null)}
+                              title="Cancel"
+                            >
+                              <X size={16} weight="bold" />
+                            </button>
+                          </>
+                        ) : isEditing ? (
                           <>
                             <button
                               type="button"
@@ -244,17 +431,27 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
                             </button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            style={iconBtn}
-                            onClick={() => {
-                              setEditKey(item.key);
-                              setEditValue(item.value);
-                            }}
-                            title="Edit"
-                          >
-                            <PencilSimple size={14} />
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              style={iconBtn}
+                              onClick={() => {
+                                setEditKey(item.key);
+                                setEditValue(item.value);
+                              }}
+                              title="Edit"
+                            >
+                              <PencilSimple size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              style={{ ...iconBtn, color: "var(--text-tertiary)" }}
+                              onClick={() => setDeleteConfirm(item.key)}
+                              title="Delete"
+                            >
+                              <Trash size={14} />
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -264,7 +461,7 @@ export default function SettingsClient({ initial }: { initial: SettingItem[] }) 
             </table>
             <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid var(--border)" }}>
               <SectionLabel>
-                Edit inline or run UPDATE platform_settings via SQL
+                Settings are stored in PostgreSQL platform_settings. Changes take effect on next Dagster asset run.
               </SectionLabel>
             </div>
           </Card>

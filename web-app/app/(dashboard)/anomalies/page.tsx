@@ -50,18 +50,22 @@ export default async function AnomaliesPage() {
             <thead>
               <tr>
                 {["Resource", "Team", "Env", "Date", "Cost", "Z-Score", "Severity", "Detector"].map(
-                  (h) => (
+                  (h, idx, arr) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: ["Cost", "Z-Score"].includes(h) ? "right" : "left",
+                        textAlign: ["Cost", "Z-Score"].includes(h) ? "right" : ["Env", "Severity"].includes(h) ? "center" : "left",
                         fontSize: "10px",
                         fontWeight: 600,
                         fontFamily: "Inter, sans-serif",
                         color: "var(--text-tertiary)",
                         letterSpacing: "0.07em",
                         textTransform: "uppercase",
-                        paddingBottom: "12px",
+                        padding: idx === 0
+                          ? "0 8px 12px 0"
+                          : idx === arr.length - 1
+                          ? "0 0 12px 8px"
+                          : "0 8px 12px 8px",
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
@@ -90,7 +94,7 @@ export default async function AnomaliesPage() {
                   <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
                     {item.team}
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SeverityBadge severity={item.env} />
                   </td>
                   <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
@@ -107,7 +111,7 @@ export default async function AnomaliesPage() {
                       {item.z_score.toFixed(2)}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SeverityBadge severity={item.severity} />
                   </td>
                   <td style={{ padding: "10px 0 10px 8px", fontSize: "11px", color: "var(--text-tertiary)" }}>

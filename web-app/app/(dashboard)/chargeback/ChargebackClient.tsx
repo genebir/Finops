@@ -165,18 +165,22 @@ export default function ChargebackClient({ initial }: { initial: ChargebackData 
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Team", "Product", "Env", "Cost", "Share"].map((h) => (
+                  {["Team", "Product", "Env", "Cost", "Share"].map((h, idx, arr) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: ["Cost", "Share"].includes(h) ? "right" : "left",
+                        textAlign: ["Cost", "Share"].includes(h) ? "right" : h === "Env" ? "center" : "left",
                         fontSize: "10px",
                         fontWeight: 600,
                         fontFamily: "Inter, sans-serif",
                         color: "var(--text-tertiary)",
                         letterSpacing: "0.07em",
                         textTransform: "uppercase",
-                        paddingBottom: "12px",
+                        padding: idx === 0
+                          ? "0 8px 12px 0"
+                          : idx === arr.length - 1
+                          ? "0 0 12px 8px"
+                          : "0 8px 12px 8px",
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
@@ -199,7 +203,7 @@ export default function ChargebackClient({ initial }: { initial: ChargebackData 
                     <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)", fontFamily: "Inter, sans-serif" }}>
                       {item.product}
                     </td>
-                    <td style={{ padding: "10px 8px" }}>
+                    <td style={{ padding: "10px 8px", textAlign: "center" }}>
                       <SeverityBadge severity={item.env} />
                     </td>
                     <td style={{ padding: "10px 8px", textAlign: "right" }}>

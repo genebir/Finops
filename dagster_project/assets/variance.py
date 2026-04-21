@@ -91,10 +91,10 @@ def variance(
         billing_month = partition_key[:7] + "-01"
         cur.execute("""
             SELECT resource_id,
-                   CAST(forecast_monthly AS DOUBLE PRECISION),
-                   CAST(actual_mtd AS DOUBLE PRECISION),
-                   CAST(variance_abs AS DOUBLE PRECISION),
-                   ROUND(CAST(variance_pct AS NUMERIC), 2),
+                   CAST(forecast_monthly AS DOUBLE PRECISION) AS forecast_monthly,
+                   CAST(actual_mtd AS DOUBLE PRECISION) AS actual_mtd,
+                   CAST(variance_abs AS DOUBLE PRECISION) AS variance_abs,
+                   ROUND(CAST(variance_pct AS NUMERIC), 2) AS variance_pct,
                    status, currency, forecast_generated_at
             FROM v_variance
             WHERE billing_month = %s OR billing_month IS NULL

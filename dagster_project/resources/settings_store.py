@@ -67,8 +67,6 @@ _DEFAULT_SETTINGS: list[tuple[str, str, str, str]] = [
 class SettingsStoreResource(ConfigurableResource):  # type: ignore[type-arg]
     """PostgreSQL platform_settings 테이블에서 런타임 설정을 읽고 쓴다."""
 
-    db_path: str = "data/marts.duckdb"
-
     def _connect(self) -> psycopg2.extensions.connection:
         conn = psycopg2.connect(_cfg.postgres.dsn)
         conn.autocommit = True
@@ -154,6 +152,18 @@ class SettingsStoreResource(ConfigurableResource):  # type: ignore[type-arg]
                         "INSERT INTO platform_settings (key, value, value_type) VALUES (%s, %s, 'str')",
                         [key, value],
                     )
+        finally:
+            conn.close()
+
+    def delete_setting(self, key: str) -> bool:
+        """설정 키를 삭제한다. 삭제 성공 시 True 반환."""
+        conn = self._connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM platform_settings WHERE key = %s", [key]
+                )
+                return cur.rowcount > 0
         finally:
             conn.close()
 

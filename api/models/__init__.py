@@ -20,7 +20,7 @@ from .filters import FiltersResponse
 from .forecast import ForecastItem, ForecastResponse
 from .overview import OverviewResponse, TeamCost, TopResource
 from .recommendations import RecommendationItem, RecommendationsResponse
-from .settings import SettingItem, SettingsResponse, SettingUpdateRequest
+from .settings import SettingCreateRequest, SettingItem, SettingsResponse, SettingUpdateRequest
 
 __all__ = [
     "AnomaliesResponse",
@@ -44,6 +44,7 @@ __all__ = [
     "RecommendationItem",
     "RecommendationsResponse",
     "ServiceCost",
+    "SettingCreateRequest",
     "SettingItem",
     "SettingsResponse",
     "SettingUpdateRequest",

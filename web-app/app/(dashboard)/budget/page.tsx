@@ -108,18 +108,22 @@ export default async function BudgetPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Team", "Env", "Budget", "Actual", "Usage", "Status"].map((h) => (
+                  {["Team", "Env", "Budget", "Actual", "Usage", "Status"].map((h, idx, arr) => (
                     <th
                       key={h}
                       style={{
-                        textAlign: ["Budget", "Actual"].includes(h) ? "right" : "left",
+                        textAlign: ["Budget", "Actual"].includes(h) ? "right" : ["Env", "Status"].includes(h) ? "center" : "left",
                         fontSize: "10px",
                         fontWeight: 600,
                         fontFamily: "Inter, sans-serif",
                         color: "var(--text-tertiary)",
                         letterSpacing: "0.07em",
                         textTransform: "uppercase",
-                        paddingBottom: "12px",
+                        padding: idx === 0
+                          ? "0 8px 12px 0"
+                          : idx === arr.length - 1
+                          ? "0 0 12px 8px"
+                          : "0 8px 12px 8px",
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
@@ -139,7 +143,7 @@ export default async function BudgetPage() {
                     <td style={{ padding: "12px 0", fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>
                       {item.team}
                     </td>
-                    <td style={{ padding: "12px 8px" }}>
+                    <td style={{ padding: "12px 8px", textAlign: "center" }}>
                       <SeverityBadge severity={item.env} />
                     </td>
                     <td style={{ padding: "12px 8px", textAlign: "right" }}>
@@ -165,7 +169,7 @@ export default async function BudgetPage() {
                         <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>No budget set</span>
                       )}
                     </td>
-                    <td style={{ padding: "12px 0 12px 8px" }}>
+                    <td style={{ padding: "12px 0 12px 8px", textAlign: "center" }}>
                       <SeverityBadge severity={item.status} />
                     </td>
                   </tr>

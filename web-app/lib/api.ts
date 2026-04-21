@@ -82,8 +82,13 @@ export const api = {
     get<ChargebackData>("/api/chargeback", p),
 
   settings: () => get<SettingsData>("/api/settings"),
+  createSetting: (body: {
+    key: string; value: string; value_type?: string; description?: string;
+  }) => send<SettingItem>("POST", "/api/settings", body),
   updateSetting: (key: string, value: string) =>
     send<SettingItem>("PUT", `/api/settings/${encodeURIComponent(key)}`, { value }),
+  deleteSetting: (key: string) =>
+    send<null>("DELETE", `/api/settings/${encodeURIComponent(key)}`),
 
   filters: () => getFresh<FiltersData>("/api/filters"),
 };

@@ -64,18 +64,22 @@ export default async function OverviewPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Resource", "Service", "Team", "Env", "Cost"].map((h) => (
+                {["Resource", "Service", "Team", "Env", "Cost"].map((h, idx, arr) => (
                   <th
                     key={h}
                     style={{
-                      textAlign: h === "Cost" ? "right" : "left",
+                      textAlign: h === "Cost" ? "right" : h === "Env" ? "center" : "left",
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
                       color: "var(--text-tertiary)",
                       letterSpacing: "0.07em",
                       textTransform: "uppercase",
-                      paddingBottom: "12px",
+                      padding: idx === 0
+                        ? "0 8px 12px 0"
+                        : idx === arr.length - 1
+                        ? "0 0 12px 8px"
+                        : "0 8px 12px 8px",
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
@@ -121,10 +125,10 @@ export default async function OverviewPage() {
                   >
                     {r.team}
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SeverityBadge severity={r.env} />
                   </td>
-                  <td style={{ padding: "10px 0", textAlign: "right" }}>
+                  <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
                     <span
                       className="font-mono"
                       style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)" }}

@@ -207,18 +207,22 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["Team", "Env", "Amount", "Billing Month", ""].map((h) => (
+              {["Team", "Env", "Amount", "Billing Month", ""].map((h, idx, arr) => (
                 <th
-                  key={h}
+                  key={h || `action-${idx}`}
                   style={{
-                    textAlign: h === "Amount" ? "right" : "left",
+                    textAlign: h === "Amount" ? "right" : h === "Env" ? "center" : "left",
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
                     color: "var(--text-tertiary)",
                     letterSpacing: "0.07em",
                     textTransform: "uppercase",
-                    paddingBottom: "12px",
+                    padding: idx === 0
+                      ? "0 8px 12px 0"
+                      : idx === arr.length - 1
+                      ? "0 0 12px 8px"
+                      : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
@@ -240,7 +244,7 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
                   <td style={{ padding: "10px 0", fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>
                     {entry.team}
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SeverityBadge severity={entry.env} />
                   </td>
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>

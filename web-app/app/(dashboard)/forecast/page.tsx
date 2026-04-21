@@ -106,18 +106,22 @@ export default async function ForecastPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Resource", "Source", "Forecast", "Actual", "Variance", "Range"].map((h) => (
+                {["Resource", "Source", "Forecast", "Actual", "Variance", "Range"].map((h, idx, arr) => (
                   <th
                     key={h}
                     style={{
-                      textAlign: ["Forecast", "Actual", "Variance"].includes(h) ? "right" : "left",
+                      textAlign: ["Forecast", "Actual", "Variance"].includes(h) ? "right" : h === "Source" ? "center" : "left",
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
                       color: "var(--text-tertiary)",
                       letterSpacing: "0.07em",
                       textTransform: "uppercase",
-                      paddingBottom: "12px",
+                      padding: idx === 0
+                        ? "0 8px 12px 0"
+                        : idx === arr.length - 1
+                        ? "0 0 12px 8px"
+                        : "0 8px 12px 8px",
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
@@ -139,7 +143,7 @@ export default async function ForecastPage() {
                       {item.resource_id}
                     </code>
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SourceTag source={item.source} />
                   </td>
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>

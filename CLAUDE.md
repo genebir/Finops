@@ -1,7 +1,8 @@
 # FinOps Platform — 완전 구현 사양서
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
-> Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
+> Phase 1 → … → Phase 11.1 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
+> **현재 상태:** Phase 11.1 완료 — PostgreSQL 기반, Settings 풀 CRUD, 288 tests pass.
 
 ---
 
@@ -17,7 +18,7 @@
 
 **확장성 원칙:** `CostSource`, `ForecastProvider`, `AnomalyDetector`, `AlertSink`, `FxProvider` 등 **Protocol 기반 추상화**로 새 클라우드·탐지기·알림을 코드 수정 없이 추가할 수 있어야 한다.
 
-**하드코딩 금지 원칙:** 모든 설정은 `config/settings.yaml` (정적 설정), DuckDB `platform_settings` 테이블 (런타임 임계값), 또는 환경변수로 관리한다. 소스 코드에 수치·경로를 직접 쓰지 않는다.
+**하드코딩 금지 원칙:** 모든 설정은 `config/settings.yaml` (정적 설정), PostgreSQL `platform_settings` 테이블 (런타임 임계값), 또는 환경변수로 관리한다. 소스 코드에 수치·경로를 직접 쓰지 않는다.
 **디자인 시스템 원칙:** 프론트엔드 작업(Streamlit 대시보드 `scripts/streamlit_app.py`, React 랜딩페이지 `web/`)을 시작하기 전에 **반드시 `docs/design-system.md`를 먼저 읽는다.** 해당 문서는 Streamlit·React 양쪽 구현에 대한 단일 소스 오브 트루스다. 색상(hex), 타이포, border-radius, spacing은 해당 문서의 토큰만 사용하며, Streamlit 기본 테마·Plotly 기본 템플릿·shadcn 기본 스타일을 그대로 쓰지 않는다. 오픈소스 배포 대상 프로젝트이므로 "modern", "clean" 같은 모호한 형용사로 회귀하지 말고 토큰 값 그대로 구현할 것.
 **모니터링 웹 앱 원칙:** 신규 웹 모니터링 UI(`web-app/`, `api/`) 작업 시 **반드시 `docs/monitoring-webapp.md`를 먼저 읽는다.** 해당 문서가 페이지 구조·API 엔드포인트·컴포넌트 규칙의 단일 소스 오브 트루스다. 기존 Streamlit(`scripts/streamlit_app.py`)은 내부 디버깅용으로만 유지하며 새 기능은 모두 `web-app/`에 구현한다.
 
@@ -31,7 +32,7 @@
 | 고속 전처리 | Polars (≥1.0) | Bronze→Silver 정제 |
 | Table Format | Apache Iceberg (via PyIceberg) | 로컬 레이크하우스 |
 | Catalog | SqlCatalog (SQLite) | 로컬 Iceberg 메타스토어 |
-| Analytics | DuckDB (≥1.0) | Silver→Gold 집계, 분석 마트 |
+| Analytics DB | PostgreSQL (≥14) + psycopg2 | Silver→Gold 집계, 분석 마트, 런타임 설정 |
 | Validation | Pydantic v2 | 스키마·값 검증 |
 | Config | PyYAML + Pydantic | 정적 설정 로딩 |
 | Cost Forecast | Infracost CLI | Terraform 기반 비용 예측 |
@@ -373,17 +374,23 @@ class CostUnit:
 ```
 config/settings.yaml          ← 기본값, 버전 관리
 config/settings.local.yaml    ← 로컬 재정의 (gitignore)
-환경변수                       ← CI/CD, 시크릿
-DuckDB platform_settings      ← 런타임 임계값 (Dagster 재시작 불필요)
+환경변수                       ← CI/CD, 시크릿, PostgreSQL 접속 정보
+PostgreSQL platform_settings   ← 런타임 임계값 (Dagster 재시작 불필요, 웹 UI에서 CRUD)
 ```
 
 ### 7.2 `config/settings.yaml` 전체 구조
 
 ```yaml
+postgres:
+  host: "localhost"
+  port: 5432
+  dbname: "finops"
+  user: "finops_app"
+  password: "finops_secret_2026"
+
 data:
   warehouse_path: "data/warehouse"
   catalog_db_path: "data/catalog.db"
-  duckdb_path: "data/marts.duckdb"
   reports_dir: "data/reports"
 
 dagster:
@@ -481,8 +488,12 @@ operational_defaults:
 
 | 환경변수 | 매핑 경로 | 용도 |
 |---|---|---|
+| `POSTGRES_HOST` | `postgres.host` | PostgreSQL 호스트 (기본 localhost) |
+| `POSTGRES_PORT` | `postgres.port` | PostgreSQL 포트 (기본 5432) |
+| `POSTGRES_DBNAME` | `postgres.dbname` | PostgreSQL DB 이름 (기본 finops) |
+| `POSTGRES_USER` | `postgres.user` | PostgreSQL 사용자 (기본 finops_app) |
+| `POSTGRES_PASSWORD` | `postgres.password` | PostgreSQL 비밀번호 |
 | `CUR_SEED` | `cur_generator.seed` | AWS CUR 생성 시드 |
-| `DUCKDB_PATH` | `data.duckdb_path` | DuckDB 파일 경로 |
 | `ICEBERG_WAREHOUSE` | `data.warehouse_path` | Iceberg 웨어하우스 경로 |
 | `REPORTS_DIR` | `data.reports_dir` | 리포트 출력 디렉토리 |
 | `TERRAFORM_PATH` | `infracost.terraform_path` | Infracost 분석 경로 |
@@ -495,9 +506,9 @@ operational_defaults:
 | `SMTP_PASSWORD` | (직접 읽기) | SMTP 인증 비밀번호 |
 | `ALERT_EMAIL_FROM` | (직접 읽기) | 발신자 이메일 |
 
-### 7.4 DuckDB `platform_settings` 테이블
+### 7.4 PostgreSQL `platform_settings` 테이블
 
-`SettingsStoreResource.ensure_table()`이 최초 실행 시 아래 기본값으로 seed한다. 이미 존재하는 키는 덮어쓰지 않는다.
+`SettingsStoreResource.ensure_table()`이 최초 실행 시 아래 기본값으로 seed한다. 이미 존재하는 키는 덮어쓰지 않는다(`ON CONFLICT (key) DO NOTHING`). 웹 UI에서 CRUD로 관리 가능.
 
 ```
 anomaly.zscore.warning              = 2.0
@@ -530,11 +541,13 @@ arima.threshold_critical            = 3.0
 arima.min_samples                   = 10
 ```
 
-런타임 변경 (Dagster 재시작 불필요):
+런타임 변경 (Dagster 재시작 불필요 — SQL 직접 또는 웹 UI에서 CRUD):
 ```sql
-UPDATE platform_settings SET value = '3.0' WHERE key = 'anomaly.zscore.warning';
-UPDATE platform_settings SET value = 'zscore,moving_average' WHERE key = 'anomaly.active_detectors';
-UPDATE platform_settings SET value = '70.0' WHERE key = 'budget.alert_threshold_pct';
+-- PostgreSQL 직접 수정
+UPDATE platform_settings SET value = '3.0', updated_at = NOW() WHERE key = 'anomaly.zscore.warning';
+
+-- 또는 웹 UI (Settings 페이지)에서 인라인 편집/신규 추가/삭제 가능
+-- API: GET/POST/PUT/DELETE /api/settings[/{key}]
 ```
 
 ---
@@ -561,7 +574,12 @@ UPDATE platform_settings SET value = '70.0' WHERE key = 'budget.alert_threshold_
 | **통화** | USD 고정 (FX는 Phase 5에서 참조 테이블로 추가) | |
 | **시간대** | 모든 timestamp UTC | Silver에서 `ChargePeriodStartUtc` 컬럼 유지 |
 | **Cost 타입** | `Decimal(18,6)` | float 절대 금지 |
-| **통합 테스트** | `dagster.materialize()` + tmp_path 기반 실제 Iceberg/DuckDB | asset 코드 직접 실행 — mock 없이 실제 경로 커버 |
+| **통합 테스트** | `dagster.materialize()` + tmp_path 기반 실제 Iceberg/PostgreSQL | asset 코드 직접 실행 — mock 없이 실제 경로 커버 |
+| **DB 마이그레이션** | DuckDB → PostgreSQL (Phase 11) | 멀티 프로세스 동시 접근, 웹 CRUD, 트랜잭션 안정성 |
+| **DB 접근 (Dagster)** | `DuckDBResource.get_connection()` → psycopg2 커넥션 | 이름은 레거시, 실제로는 PostgreSQL 접속 |
+| **DB 접근 (API)** | `api/deps.py` `db_read()`/`db_write()` → psycopg2 | autocommit=True, 읽기/쓰기 분리 |
+| **SQL 구문** | PostgreSQL 표준 | `to_char()`, `DOUBLE PRECISION`, `%s` 파라미터, `DROP VIEW IF EXISTS` + `CREATE VIEW` |
+| **Settings CRUD** | PostgreSQL `platform_settings` + FastAPI POST/PUT/DELETE + Next.js UI | 웹에서 실시간 설정 관리, Dagster 재시작 불필요 |
 
 ---
 
@@ -571,14 +589,18 @@ UPDATE platform_settings SET value = '70.0' WHERE key = 'budget.alert_threshold_
    Dagster가 런타임에 타입 힌트를 검사하는데, `from __future__ import annotations`가 있으면 `AssetExecutionContext`를 문자열로 처리해 `DagsterInvalidDefinitionError`가 발생한다.
    → 모든 `assets/` 디렉토리 파일에 해당.
 
-2. **DuckDB `ON CONFLICT DO UPDATE SET updated_at = CURRENT_TIMESTAMP` 금지**
-   DuckDB는 `CURRENT_TIMESTAMP`를 컬럼명으로 인식하여 Binder Error가 발생한다.
-   → `settings_store.py`에서 `SELECT` 후 조건부 `UPDATE`/`INSERT` 패턴 사용.
+2. **PostgreSQL SQL 구문 주의사항**
+   - `?` 바인딩 금지 → `%s` 사용 (psycopg2)
+   - `DOUBLE` → `DOUBLE PRECISION`
+   - `::VARCHAR` → `::TEXT`
+   - `strftime(col, '%Y-%m')` → `to_char(col, 'YYYY-MM')`
+   - `CREATE OR REPLACE VIEW` → `DROP VIEW IF EXISTS` + `CREATE VIEW` (컬럼 변경 시 에러)
+   - `ROUND(double_col, 2)` → `ROUND(CAST(col AS NUMERIC), 2)` (PostgreSQL `round(dp, int)` 미지원)
+   - SQL SELECT에서 `CAST()`/`ROUND()` 사용 시 **반드시 `AS alias`** 명시 (PostgreSQL이 컬럼명을 `round`, `cast` 등으로 반환)
 
-3. **`platform_settings` ALTER TABLE 마이그레이션**
-   새 컬럼 추가 시:
-   ```python
-   conn.execute("ALTER TABLE anomaly_scores ADD COLUMN IF NOT EXISTS detector_name VARCHAR DEFAULT 'zscore'")
+3. **PostgreSQL 테이블/뷰 존재 확인**
+   ```sql
+   SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='table_name'
    ```
 
 4. **Silver asset은 Bronze 전체를 읽고 월로 필터링**
@@ -593,9 +615,14 @@ UPDATE platform_settings SET value = '70.0' WHERE key = 'budget.alert_threshold_
    lower_sum = float(horizon_rows["yhat_lower"].sum()) if "yhat_lower" in horizon_rows.columns else 0.0
    ```
 
-6. **통합 테스트에서 빈 fact_daily_cost 테이블 주의**
-   DuckDB에서 빈 테이블 쿼리 결과로 `pl.from_arrow()` 호출 시 `ValueError: Must pass schema` 발생 가능.
-   → 최소 1개 이상의 행을 seed하거나, 테이블 미존재 케이스만 테스트할 것.
+6. **통합 테스트 — 공유 PostgreSQL DB 주의**
+   테스트가 실제 PostgreSQL에 직접 접속한다 (DuckDB in-memory 격리 불가).
+   - 테스트 데이터는 `test_` 또는 `inttest_` 접두사를 써서 프로덕션 데이터와 구분
+   - fixture에서 반드시 cleanup (`DELETE WHERE resource_id LIKE 'test_%'`)
+   - 와일드카드 `("*", "*")` 같은 글로벌 행이 다른 테스트에 영향 주의
+
+7. **PostgreSQL 오브젝트 소유권**
+   테이블/뷰는 `finops_app` 사용자가 소유해야 한다. `postgres` 사용자로 생성된 오브젝트는 `ALTER TABLE/VIEW ... OWNER TO finops_app` 필요.
 
 ---
 
@@ -610,7 +637,7 @@ dependencies = [
     "dagster>=1.8",
     "dagster-webserver>=1.8",
     "polars>=1.0",
-    "duckdb>=1.0",
+    "psycopg2-binary>=2.9",
     "pyiceberg[sql-sqlite,pyarrow]>=0.7",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
@@ -693,8 +720,8 @@ module_name = "dagster_project.definitions"
 - [x] `dim_budget_status`: `CREATE TABLE IF NOT EXISTS` + `DELETE WHERE billing_month=?` + `INSERT`
 - [x] `dim_chargeback`: `CREATE TABLE IF NOT EXISTS` + `DELETE WHERE billing_month=?` + `INSERT`
 - [x] `dim_fx_rates`: `DELETE WHERE base_currency='USD'` + `INSERT`
-- [x] `dim_cost_unit`: `CREATE OR REPLACE TABLE AS SELECT FROM fact_daily_cost` (전체 재생성)
-- [x] `v_top_resources_30d`, `v_top_cost_units_30d`, `v_variance`: `CREATE OR REPLACE VIEW`
+- [x] `dim_cost_unit`: `DELETE` + `INSERT INTO ... SELECT FROM fact_daily_cost` (전체 재생성)
+- [x] `v_top_resources_30d`, `v_top_cost_units_30d`, `v_variance`: `DROP VIEW IF EXISTS` + `CREATE VIEW`
 - [x] 전체 파이프라인 2회 실행 후 동일 결과
 
 ---
@@ -828,6 +855,32 @@ uv run mypy dagster_project
 - Frontend: BudgetManager CRUD UI, Settings 인라인 편집, CostExplorer 필터 확장, Chargeback 월 셀렉터
 - **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
 
+### Phase 11 — DuckDB → PostgreSQL 전면 마이그레이션
+
+- 전체 DB 레이어를 DuckDB(파일 기반)에서 PostgreSQL(서버 기반)로 전환 (28+ 파일)
+- `dagster_project/resources/duckdb_io.py` — psycopg2 기반 `get_connection()` (이름은 레거시 유지)
+- `dagster_project/resources/settings_store.py` — psycopg2, `ON CONFLICT DO NOTHING` seed
+- `dagster_project/resources/budget_store.py` — psycopg2
+- `dagster_project/assets/*.py` — `%s` 파라미터, `to_char()`, `DOUBLE PRECISION`, `DROP VIEW IF EXISTS`
+- `api/deps.py` — psycopg2 `db_read()`/`db_write()`, `tables()`, `columns()` 헬퍼
+- `api/routers/*.py` — cursor 패턴, `%s`, `::TEXT`, `CAST AS DOUBLE PRECISION`
+- `scripts/dashboard.py`, `streamlit_app.py`, `run_phase2.py` — psycopg2 전환
+- `sql/marts/*.sql` — `DOUBLE PRECISION`, `INTERVAL '30 days'`, `DELETE+INSERT` 패턴
+- `tests/*.py` — 실제 PostgreSQL, unique prefix + cleanup fixture
+- `config/settings.yaml` — `postgres:` 섹션 추가 (host/port/dbname/user/password)
+- **288 tests pass** ✅
+
+### Phase 11.1 — Settings 풀 CRUD + 대시보드 UX 개선
+
+- Settings API — POST (201, 409 on conflict) + DELETE (204) 엔드포인트 추가
+- `SettingCreateRequest` Pydantic 모델 (key/value/value_type/description)
+- `SettingsStoreResource` — `delete_setting()` 메서드, `db_path` 필드 제거
+- Settings UI — "Add Setting" 폼 + 삭제 확인 + Type 컬럼 표시
+- 테이블 헤더 간격 정렬 — 8개 테이블 `<th>` 수평 패딩을 `<td>`와 일치
+- Badge/pill 컬럼 가운데 정렬 — Env/Severity/Status/Source 컬럼 `textAlign: "center"`
+- `variance.py` — `ROUND()` 결과에 `AS variance_pct` 별칭 추가 (KeyError 수정)
+- **288 tests pass** ✅
+
 ---
 
 ## 15. Phase 9 — 대시보드 확장
@@ -893,7 +946,7 @@ api/
 │   ├── forecast.py
 │   ├── overview.py
 │   ├── recommendations.py
-│   └── settings.py      # SettingUpdateRequest 추가
+│   └── settings.py      # SettingCreateRequest, SettingUpdateRequest
 └── routers/             # 엔드포인트 (APIRouter 단위)
     ├── overview.py          # + start/end/provider 쿼리 파라미터
     ├── anomalies.py
@@ -903,7 +956,7 @@ api/
     ├── recommendations.py
     ├── chargeback.py        # + billing_month 쿼리, available_months 응답
     ├── filters.py           # GET /api/filters
-    └── settings.py          # GET + PUT (기존 키만 갱신)
+    └── settings.py          # GET/POST/PUT/DELETE (풀 CRUD)
 ```
 
 ### 10.2 신규/확장 엔드포인트
@@ -916,31 +969,36 @@ api/
 | POST | `/api/budget` | 신규 예산 (409 on conflict) |
 | PUT  | `/api/budget/{team}/{env}?billing_month=default` | 금액 갱신 |
 | DELETE | `/api/budget/{team}/{env}?billing_month=default` | 삭제 (204) |
-| PUT  | `/api/settings/{key}` | `platform_settings.value` 갱신 (기존 키만, 신규 키 생성 금지) |
+| POST | `/api/settings` | 신규 설정 생성 (key/value/value_type/description, 409 on conflict) |
+| PUT  | `/api/settings/{key}` | `platform_settings.value` 갱신 |
+| DELETE | `/api/settings/{key}` | 설정 삭제 (204) |
 | GET  | `/api/cost-explorer?provider=aws&start=...&end=...` | provider 필터 추가, 응답에 `by_provider[]` |
 | GET  | `/api/chargeback?billing_month=2026-03` | 월 선택 + `available_months[]` 반환 |
 | GET  | `/api/overview?start=...&end=...&provider=...` | 날짜 범위 + provider 필터 |
 
 ### 10.3 DB 접근 패턴
 
-`api/deps.py`:
+`api/deps.py` — PostgreSQL (psycopg2):
 
 ```python
 @contextmanager
-def db_read() -> Generator[DuckDBPyConnection, None, None]:
-    conn = duckdb.connect(DB_PATH, read_only=True)
+def db_read() -> Generator[psycopg2.extensions.connection, None, None]:
+    conn = psycopg2.connect(_PG_DSN)
+    conn.autocommit = True
     try: yield conn
     finally: conn.close()
 
 @contextmanager
-def db_write() -> Generator[DuckDBPyConnection, None, None]:
-    # 8회 지수 백오프 (0.25s × 2^attempt + jitter), Dagster와 락 충돌 방지
-    # 최종 실패 시 HTTPException(503, "Database busy after N retries: ...")
+def db_write() -> Generator[psycopg2.extensions.connection, None, None]:
+    conn = psycopg2.connect(_PG_DSN)
+    conn.autocommit = True
+    try: yield conn
+    finally: conn.close()
 ```
 
-- **읽기는 read_only=True** — Dagster write와 동시 접근 가능
-- **쓰기는 retry 백오프** — Dagster job 실행 중에도 CRUD 가능
-- 모든 동적 쿼리는 파라미터 바인딩 (`db.execute("... WHERE team = ?", [team])`) — SQL 인젝션 방지
+- PostgreSQL은 멀티 프로세스 동시 접근을 네이티브 지원 → DuckDB와 달리 read_only/retry 불필요
+- 모든 동적 쿼리는 파라미터 바인딩 (`cur.execute("... WHERE team = %s", [team])`) — SQL 인젝션 방지
+- `conn.autocommit = True` — DDL/DML 즉시 반영
 
 ### 10.4 프론트엔드 변경사항
 
@@ -949,7 +1007,7 @@ def db_write() -> Generator[DuckDBPyConnection, None, None]:
   - Add 폼 (team/env/amount/billing_month)
   - 인라인 편집 (PencilSimple → Check/X)
   - 삭제 확인 (Trash)
-- `app/(dashboard)/settings/SettingsClient.tsx` — NEW 인라인 편집 (Enter 저장, Escape 취소)
+- `app/(dashboard)/settings/SettingsClient.tsx` — 풀 CRUD: 인라인 편집 (Enter 저장, Escape 취소) + Add Setting 폼 (key/value/type/description) + 삭제 확인
 - `app/(dashboard)/cost-explorer/CostExplorerClient.tsx` — provider/service 드롭다운, 날짜 범위, "Clear N filters" 버튼, provider breakdown 카드 (provider 2개 이상일 때)
 - `app/(dashboard)/chargeback/ChargebackClient.tsx` — 월 선택 드롭다운 + `available_months` 로딩
 
@@ -963,7 +1021,7 @@ def db_write() -> Generator[DuckDBPyConnection, None, None]:
 | SQL 동적 생성 | f-string 일부 | 모든 값 파라미터 바인딩 |
 | 필터 옵션 | overview 응답에 포함 | `/api/filters` 단일 엔드포인트 |
 | Budget | 읽기 전용 | POST/PUT/DELETE CRUD |
-| Settings | 읽기 전용 | PUT (기존 키만) |
+| Settings | 읽기 전용 | POST/PUT/DELETE 풀 CRUD |
 | Cost Explorer | team/env/날짜 | + provider, by_provider 집계 |
 | Chargeback | 최신 월만 | 월 선택 + 과거 월 조회 |
 
@@ -987,10 +1045,133 @@ curl -X PUT 'http://localhost:8000/api/budget/demo/dev?billing_month=default' \
 curl -X DELETE 'http://localhost:8000/api/budget/demo/dev?billing_month=default'
 ```
 
-### 10.7 Phase 10 이후 남은 과제
+### 10.7 남은 과제
 
 - 실제 클라우드 API 연동 (AWS CUR S3, GCP Billing Export, Azure Cost Management)
 - 팀별 데이터 접근 제어 (인증·인가)
 - 이메일 AlertSink Streamlit 설정 UI
-- FastAPI 의존성 주입 기반 `SettingsStoreResource`/`BudgetStoreResource` 재사용 (현재는 DuckDB 직접 접근)
 - pytest 기반 FastAPI 라우터 통합 테스트 (`TestClient`)
+
+---
+
+## 17. Phase 11 — DuckDB → PostgreSQL 마이그레이션
+
+DuckDB 파일 기반 DB를 PostgreSQL로 전면 전환. 멀티 프로세스 동시 접근, 트랜잭션 안정성, 웹 CRUD 지원이 목적.
+
+### 11.1 PostgreSQL 접속 정보
+
+```
+host=localhost, port=5432, user=finops_app, password=finops_secret_2026, dbname=finops
+```
+
+`config/settings.yaml`에 `postgres` 섹션 추가:
+```yaml
+postgres:
+  host: "localhost"
+  port: 5432
+  dbname: "finops"
+  user: "finops_app"
+  password: "finops_secret_2026"
+```
+
+### 11.2 마이그레이션 범위 (28+ 파일)
+
+| 영역 | 변경 내용 |
+|---|---|
+| `dagster_project/resources/duckdb_io.py` | `import duckdb` → `import psycopg2`, `get_connection()` → psycopg2 커넥션 |
+| `dagster_project/resources/settings_store.py` | psycopg2, `ON CONFLICT DO NOTHING`, `db_path` 필드 제거 |
+| `dagster_project/resources/budget_store.py` | psycopg2 |
+| `dagster_project/assets/*.py` | `%s` 파라미터, `to_char()`, `DOUBLE PRECISION`, `DROP VIEW IF EXISTS` |
+| `api/deps.py` | psycopg2 `db_read()`/`db_write()` |
+| `api/routers/*.py` | cursor 패턴, `%s` 파라미터, `::TEXT` |
+| `scripts/dashboard.py` | psycopg2, `pg_tables` |
+| `scripts/streamlit_app.py` | psycopg2, `_PG_DSN`, `to_char()` |
+| `scripts/run_phase2.py` | psycopg2 |
+| `sql/marts/*.sql` | `DOUBLE PRECISION`, `INTERVAL '30 days'` |
+| `tests/*.py` | 실제 PostgreSQL, unique prefix, cleanup |
+
+### 11.3 SQL 구문 차이점 (DuckDB → PostgreSQL)
+
+| DuckDB | PostgreSQL |
+|---|---|
+| `?` | `%s` |
+| `DOUBLE` | `DOUBLE PRECISION` |
+| `::VARCHAR` | `::TEXT` |
+| `strftime(col, '%Y-%m')` | `to_char(col, 'YYYY-MM')` |
+| `INTERVAL 30 DAY` | `INTERVAL '30 days'` |
+| `CREATE OR REPLACE VIEW` | `DROP VIEW IF EXISTS` + `CREATE VIEW` |
+| `CREATE OR REPLACE TABLE AS SELECT` | `DELETE FROM` + `INSERT INTO ... SELECT` |
+| `ROUND(double, 2)` | `ROUND(CAST(col AS NUMERIC), 2)` |
+| `CAST(expr AS type)` (컬럼명 자동 유지) | `CAST(expr AS type) AS alias` (명시적 alias 필수) |
+
+### 11.4 테스트 격리 전략
+
+DuckDB in-memory 격리에서 공유 PostgreSQL로 전환:
+- 테스트 데이터에 `test_` / `inttest_` 접두사 사용
+- fixture에서 `DELETE WHERE resource_id LIKE 'test_%'` cleanup
+- `budget_store` 테스트는 unique team/env명 사용 + cleanup helper
+
+---
+
+## 18. Phase 11.1 — Settings 풀 CRUD + 대시보드 UX 개선
+
+### 18.1 Settings 풀 CRUD
+
+PostgreSQL `platform_settings`를 웹 UI에서 완전히 관리 가능하도록 확장.
+
+**API 변경:**
+- `api/models/settings.py` — `SettingCreateRequest` 추가 (key/value/value_type/description, Pydantic 검증)
+- `api/routers/settings.py` — POST (201, 409 on conflict) + DELETE (204, 404 on missing) 추가
+- `dagster_project/resources/settings_store.py` — `delete_setting()` 메서드 추가, `db_path` 필드 제거
+
+**프론트엔드 변경:**
+- `web-app/lib/api.ts` — `createSetting()`, `deleteSetting()` 메서드 추가
+- `web-app/app/(dashboard)/settings/SettingsClient.tsx` — 풀 CRUD UI:
+  - "Add Setting" 버튼 + 폼 (key/value/type/description)
+  - 인라인 편집 (기존)
+  - 삭제 확인 (Trash 아이콘 → Check/X 확인)
+  - Type 컬럼 추가 (float/int/str/bool 표시)
+
+**Dagster 연동:**
+- Dagster asset은 이미 `settings_store.get_float/get_int/get_str()` 패턴으로 PostgreSQL에서 런타임 설정을 읽는다
+- 웹에서 값을 변경하면 다음 asset 실행 시 즉시 반영 (Dagster 재시작 불필요)
+- `ensure_table()`은 `ON CONFLICT DO NOTHING`으로 기본값만 seed — 웹에서 변경한 값은 보존
+
+### 18.2 테이블 헤더 간격 정렬
+
+모든 대시보드 테이블(8개 파일)의 `<th>` 수평 패딩을 `<td>`와 일치시켜 가독성 개선:
+
+```
+첫 번째 컬럼 th: padding "0 8px 12px 0"      (td: "10px 0")
+중간 컬럼 th:    padding "0 8px 12px 8px"     (td: "10px 8px")
+마지막 컬럼 th:  padding "0 0 12px 8px"       (td: "10px 0 10px 8px")
+```
+
+### 18.3 Badge/Pill 컬럼 가운데 정렬
+
+테이블에서 `SeverityBadge`, `SourceTag` 등 badge/pill 형태 요소가 들어가는 컬럼은 `<th>`와 `<td>` 모두 `textAlign: "center"` 적용:
+
+- **Env** — overview, anomalies, budget(status+manager), recommendations, chargeback
+- **Severity** — anomalies, recommendations
+- **Status** — budget status
+- **Source** — forecast (SourceTag)
+
+### 18.4 variance.py ROUND 별칭 수정
+
+PostgreSQL에서 `ROUND(CAST(variance_pct AS NUMERIC), 2)` 사용 시 별칭이 없으면 컬럼명이 `round`으로 반환되어 `alert_dispatch`에서 `KeyError: 'variance_pct'` 발생.
+→ `AS variance_pct` 명시적 별칭 추가, 다른 `CAST()` 컬럼에도 동일 적용.
+
+### 18.5 검증
+
+```bash
+# Settings CRUD
+curl -X POST http://localhost:8000/api/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"key":"custom.threshold","value":"2.5","value_type":"float","description":"Custom threshold"}'
+curl -X PUT http://localhost:8000/api/settings/custom.threshold \
+  -H 'Content-Type: application/json' -d '{"value":"3.0"}'
+curl -X DELETE http://localhost:8000/api/settings/custom.threshold
+
+# 288 tests, all pass
+uv run pytest tests/ -q
+```
