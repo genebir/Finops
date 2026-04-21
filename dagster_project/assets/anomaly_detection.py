@@ -120,6 +120,22 @@ def anomaly_detection(
         except ImportError:
             context.log.warning("scikit-learn 미설치 — isolation_forest 건너뜀")
 
+    if "moving_average" in active_detectors:
+        from ..detectors.moving_average_detector import MovingAverageDetector
+
+        ma_anomalies = MovingAverageDetector(
+            window_days=settings_store.get_int("moving_average.window_days", 7),
+            multiplier_warning=settings_store.get_float(
+                "moving_average.multiplier_warning", 2.0
+            ),
+            multiplier_critical=settings_store.get_float(
+                "moving_average.multiplier_critical", 3.0
+            ),
+            min_window=settings_store.get_int("moving_average.min_window", 3),
+        ).detect(df)
+        all_anomalies.extend(ma_anomalies)
+        context.log.info(f"MovingAverage: {len(ma_anomalies)}개 이상치")
+
     context.log.info(
         f"Total anomalies: {len(all_anomalies)} "
         f"(critical: {sum(1 for a in all_anomalies if a.severity == 'critical')}, "

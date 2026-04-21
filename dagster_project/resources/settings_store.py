@@ -46,6 +46,11 @@ _DEFAULT_SETTINGS: list[tuple[str, str, str, str]] = [
     # Phase 4: 예산 관리 설정
     ("budget.alert_threshold_pct",      "80.0", "float", "예산 사용률 이 % 이상 시 경고 알림"),
     ("budget.over_threshold_pct",       "100.0","float", "예산 사용률 이 % 이상 시 초과 알림"),
+    # Phase 5: MovingAverage 탐지기 설정
+    ("moving_average.window_days",      "7",    "int",   "이동평균 윈도우 크기(일)"),
+    ("moving_average.multiplier_warning",  "2.0", "float", "이동평균 경고 임계값 배수"),
+    ("moving_average.multiplier_critical", "3.0", "float", "이동평균 위험 임계값 배수"),
+    ("moving_average.min_window",       "3",    "int",   "이동평균 계산 최소 데이터 포인트 수"),
 ]
 
 

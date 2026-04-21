@@ -13,6 +13,7 @@ from .assets import (
     budget_alerts,
     chargeback,
     forecast_variance_prophet,
+    fx_rates,
     gold_marts,
     gold_marts_azure,
     gold_marts_gcp,
@@ -57,6 +58,7 @@ all_assets = load_assets_from_modules(
         forecast_variance_prophet,
         budget_alerts,
         chargeback,
+        fx_rates,
     ]
 )
 
