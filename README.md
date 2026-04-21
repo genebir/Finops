@@ -156,7 +156,7 @@ finops-platform/
 │   └── streamlit_app.py        # Streamlit 웹 대시보드 (6탭)
 ├── sql/marts/                  # DuckDB DDL / View SQL
 ├── terraform/sample/           # Infracost 분석 대상 IaC (EC2/RDS/S3)
-├── tests/                      # pytest 테스트 (360개)
+├── tests/                      # pytest 테스트 (371개)
 ├── install.sh                  # 크로스플랫폼 원커맨드 인스톨러
 ├── scripts/init_db.py          # DB 스키마 부트스트랩 CLI
 └── data/                       # 생성된 데이터 (gitignored)
@@ -189,3 +189,25 @@ finops-platform/
 | Phase 16 | 태그 정책 엔진 + dim_tag_violations + /api/tag-policy | **340 / pass** |
 | Phase 17 | 비용 배분 + 분할 규칙 CRUD + /api/cost-allocation | **351 / pass** |
 | Phase 18 | Showback 리포트 asset + JSON export + /api/showback | **360 / pass** |
+| Phase 19 | 비용 트렌드 분석 + 기간 비교 + /api/cost-trend + /compare | **371 / pass** |
+| Phase 20 | 알림 히스토리 영속화 + Acknowledge 워크플로우 + /api/alerts | **384 / pass** |
+| Phase 21 | Alerts 대시보드 페이지 (severity 필터, Ack 워크플로우 UI) | **384 / pass** |
+| Phase 22 | 멀티클라우드 비교 API + Cloud Compare 대시보드 (provider × team 매트릭스) | **395 / pass** |
+| Phase 23 | 절감 실적 추적 asset + dim_savings_realized + /api/savings | **405 / pass** |
+| Phase 24 | Savings 대시보드 페이지 + /api/cost-heatmap (daily cost matrix) | **415 / pass** |
+| Phase 25 | 비용-리스크 상관 API /api/cost-risk (cost × anomaly_count risk score) | **425 / pass** |
+| Phase 26 | Risk 대시보드 + 리소스 드릴다운 API /api/resources/{id} | **434 / pass** |
+| Phase 27 | 팀 리더보드 /api/leaderboard + 서비스 카테고리 /api/service-breakdown | **449 / pass** |
+| Phase 28 | Leaderboard + Services 대시보드 페이지 (MoM badge, PctBar, 메달) | **449 / pass** |
+| Phase 29 | 예산 예측 asset + dim_budget_forecast + /api/budget-forecast | **459 / pass** |
+| Phase 30 | Budget Forecast 대시보드 + /api/env-breakdown (환경별 교차표) | **468 / pass** |
+| Phase 31 | Env Breakdown 대시보드 + 태그 준수율 점수 asset + /api/tag-compliance + Tag Compliance 대시보드 | **477 / pass** |
+| Phase 32 | Anomaly Timeline API/대시보드 + Cloud Config API/UI + 디자인 통일 + 사이드바 카테고리 그룹 | **498 / pass** |
+| Phase 33 | Inventory / Showback / Tag Policy 대시보드 페이지 + Burn Rate 디자인 수정 | **498 / pass** |
+| Phase 34 | Cost Trend 대시보드 페이지 (월별 바 + 상세 표 + 기간 비교 섹션) | **498 / pass** |
+| Phase 35 | Resource Detail 드릴다운 페이지 `/resources/[id]` + Inventory 링크 연결 | **498 / pass** |
+| Phase 36 | Cost Allocation 대시보드 (rules CRUD + allocated cost 조회) | **498 / pass** |
+| Phase 37 | API 엔드포인트 테스트 72개 추가 (7개 파일) — API 커버리지 92% | **570 / pass** |
+| Phase 38 | Overview 페이지 강화 (provider breakdown + 6개월 trend sparkline + resource 드릴다운 링크) | **570 / pass** |
+| Phase 39 | Cost Heatmap 대시보드 + Cloud Config 대시보드 (provider 연결 설정 인라인 편집 UI) | **591 / pass** |
+| Phase 40 | Team Detail API `/api/teams/{team}` + 드릴다운 페이지 + Leaderboard 링크 | **601 / pass** |

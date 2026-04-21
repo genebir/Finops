@@ -62,6 +62,21 @@ _DEFAULT_SETTINGS: list[tuple[str, str, str, str]] = [
     ("autoencoder.min_samples",         "14",   "int",   "Autoencoder 최소 샘플 수"),
     ("autoencoder.max_iter",            "200",  "int",   "Autoencoder MLPRegressor 최대 반복 횟수"),
     ("tag_policy.rules",                "",     "str",   "태그 정책 JSON (빈 값 = 기본 정책 사용)"),
+    # Cloud connection settings (non-secret config only — secrets go to env vars)
+    ("cloud.aws.enabled",              "false", "bool",  "AWS 클라우드 연동 활성화"),
+    ("cloud.aws.region",               "us-east-1", "str", "AWS 기본 리전"),
+    ("cloud.aws.cur_s3_bucket",        "",      "str",   "AWS CUR S3 버킷명"),
+    ("cloud.aws.cur_s3_prefix",        "cur/",  "str",   "AWS CUR S3 경로 접두사"),
+    ("cloud.aws.account_id",           "",      "str",   "AWS 계정 ID"),
+    ("cloud.gcp.enabled",              "false", "bool",  "GCP 클라우드 연동 활성화"),
+    ("cloud.gcp.project_id",           "",      "str",   "GCP 프로젝트 ID"),
+    ("cloud.gcp.billing_dataset",      "",      "str",   "GCP 빌링 BigQuery 데이터셋"),
+    ("cloud.gcp.billing_table",        "",      "str",   "GCP 빌링 BigQuery 테이블"),
+    ("cloud.azure.enabled",            "false", "bool",  "Azure 클라우드 연동 활성화"),
+    ("cloud.azure.subscription_id",    "",      "str",   "Azure 구독 ID"),
+    ("cloud.azure.tenant_id",          "",      "str",   "Azure 테넌트 ID"),
+    ("cloud.azure.storage_account",    "",      "str",   "Azure Cost Export 스토리지 계정"),
+    ("cloud.azure.storage_container",  "",      "str",   "Azure Cost Export 컨테이너명"),
 ]
 
 

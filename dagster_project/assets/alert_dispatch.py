@@ -7,8 +7,11 @@ from pathlib import Path
 import polars as pl
 from dagster import AssetExecutionContext, asset
 
+import psycopg2.extras
+
 from ..config import load_config
 from ..core.alert_sink import Alert
+from ..db_schema import ensure_tables
 from ..resources.duckdb_io import DuckDBResource
 from ..resources.settings_store import SettingsStoreResource
 from ..sinks.console_sink import ConsoleSink
@@ -117,6 +120,30 @@ def alert_dispatch(
 
     for sink in sinks:
         sink.send_batch(alerts)
+
+    if alerts:
+        with duckdb_resource.get_connection() as pg_conn:
+            ensure_tables(pg_conn, "dim_alert_history")
+            rows = [
+                (
+                    a.alert_type, a.severity, a.resource_id, a.cost_unit_key,
+                    a.message, float(a.actual_cost), float(a.reference_cost),
+                    a.deviation_pct, a.triggered_at,
+                )
+                for a in alerts
+            ]
+            with pg_conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO dim_alert_history
+                        (alert_type, severity, resource_id, cost_unit_key,
+                         message, actual_cost, reference_cost, deviation_pct, triggered_at)
+                    VALUES %s
+                    """,
+                    rows,
+                )
+        context.log.info(f"Persisted {len(alerts)} alerts to dim_alert_history")
 
     context.log.info(
         f"Dispatched {len(alerts)} alerts "

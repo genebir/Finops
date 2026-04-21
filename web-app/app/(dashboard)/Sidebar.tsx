@@ -13,6 +13,15 @@ const NAV = [
   { href: "/ops",              label: "Ops" },
   { href: "/data-quality",     label: "Data Quality" },
   { href: "/burn-rate",        label: "Burn Rate" },
+  { href: "/alerts",           label: "Alerts" },
+  { href: "/cloud-compare",    label: "Cloud Compare" },
+  { href: "/savings",          label: "Savings" },
+  { href: "/risk",             label: "Risk" },
+  { href: "/leaderboard",      label: "Leaderboard" },
+  { href: "/services",         label: "Services" },
+  { href: "/budget-forecast",  label: "Budget Forecast" },
+  { href: "/cost-heatmap",     label: "Cost Heatmap" },
+  { href: "/cloud-config",     label: "Cloud Config" },
 ];
 
 export default function Sidebar() {

@@ -18,11 +18,11 @@ export default function PageHeader({ title, description, action }: PageHeaderPro
         <h1
           className="font-display"
           style={{
-            fontSize: "clamp(32px, 3vw, 48px)",
+            fontSize: "28px",
             color: "var(--text-primary)",
             lineHeight: 1.1,
             letterSpacing: "-0.02em",
-            marginBottom: description ? "8px" : 0,
+            marginBottom: description ? "4px" : 0,
           }}
         >
           {title}
@@ -30,7 +30,7 @@ export default function PageHeader({ title, description, action }: PageHeaderPro
         {description && (
           <p
             style={{
-              fontSize: "15px",
+              fontSize: "14px",
               color: "var(--text-secondary)",
               fontFamily: "Inter, sans-serif",
             }}

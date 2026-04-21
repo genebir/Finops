@@ -16,12 +16,25 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .middleware import RequestContextMiddleware
 from .routers import (
+    alerts,
     anomalies,
+    anomaly_timeline,
+    cloud_config,
+    budget_forecast,
+    cloud_compare,
+    env_breakdown,
+    cost_heatmap,
+    cost_risk,
+    leaderboard,
+    resource_detail,
+    savings,
+    service_breakdown,
     budget,
     burn_rate,
     chargeback,
     cost_allocation,
     cost_explorer,
+    cost_trend,
     data_quality,
     filters,
     forecast,
@@ -31,7 +44,9 @@ from .routers import (
     recommendations,
     settings,
     showback,
+    tag_compliance,
     tag_policy,
+    team_detail,
 )
 
 app = FastAPI(
@@ -72,3 +87,18 @@ app.include_router(inventory.router)
 app.include_router(tag_policy.router)
 app.include_router(cost_allocation.router)
 app.include_router(showback.router)
+app.include_router(cost_trend.router)
+app.include_router(alerts.router)
+app.include_router(cloud_compare.router)
+app.include_router(savings.router)
+app.include_router(cost_heatmap.router)
+app.include_router(cost_risk.router)
+app.include_router(resource_detail.router)
+app.include_router(leaderboard.router)
+app.include_router(service_breakdown.router)
+app.include_router(budget_forecast.router)
+app.include_router(env_breakdown.router)
+app.include_router(tag_compliance.router)
+app.include_router(anomaly_timeline.router)
+app.include_router(cloud_config.router)
+app.include_router(team_detail.router)

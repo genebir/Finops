@@ -120,7 +120,7 @@ export default function DataQualityClient() {
       {/* Check results table */}
       <Card style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <CardHeader style={{ margin: 0 }}>Quality Checks</CardHeader>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Quality Checks</p>
           <div style={{ display: "flex", gap: 8 }}>
             {(["all", "failed"] as const).map((f) => (
               <button

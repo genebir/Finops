@@ -129,6 +129,50 @@ export interface BurnRateData {
   billing_month: string; items: BurnRateItem[]; summary: BurnRateSummary;
 }
 
+export interface SavingsItem {
+  resource_id: string; team: string; product: string; env: string;
+  provider: string; recommendation_type: string;
+  estimated_savings: number; realized_savings: number | null;
+  prev_month_cost: number | null; curr_month_cost: number | null;
+  status: string;
+}
+export interface SavingsSummary {
+  total_estimated: number; total_realized: number;
+  realized_count: number; partial_count: number;
+  pending_count: number; cost_increased_count: number;
+}
+export interface SavingsData {
+  billing_month: string; items: SavingsItem[]; summary: SavingsSummary;
+}
+
+export interface HeatmapRow { team: string; values: number[] }
+export interface CostHeatmapData {
+  billing_month: string; dates: string[]; teams: string[];
+  matrix: HeatmapRow[]; max_cost: number;
+}
+
+export interface AlertHistoryItem {
+  id: number;
+  alert_type: string;
+  severity: string;
+  resource_id: string;
+  cost_unit_key: string;
+  message: string;
+  actual_cost: number | null;
+  reference_cost: number | null;
+  deviation_pct: number | null;
+  triggered_at: string;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+}
+export interface AlertSummary {
+  critical: number; warning: number; info: number; unacknowledged: number;
+}
+export interface AlertHistoryData {
+  items: AlertHistoryItem[]; total: number; summary: AlertSummary;
+}
+
 export interface DqCheck {
   id: number;
   checked_at: string | null;

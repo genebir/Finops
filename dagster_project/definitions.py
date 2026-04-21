@@ -11,10 +11,13 @@ from .assets import (
     bronze_iceberg_azure,
     bronze_iceberg_gcp,
     budget_alerts,
+    budget_forecast,
     burn_rate,
     chargeback,
     cost_allocation,
     cost_recommendations,
+    cost_trend,
+    savings_tracker,
     showback_report,
     data_quality,
     forecast_variance_prophet,
@@ -28,6 +31,7 @@ from .assets import (
     raw_cur_azure,
     raw_cur_gcp,
     resource_inventory,
+    tag_compliance_score,
     tag_policy,
     silver_focus,
     silver_focus_azure,
@@ -81,6 +85,10 @@ all_assets = load_assets_from_modules(
         tag_policy,
         cost_allocation,
         showback_report,
+        cost_trend,
+        savings_tracker,
+        budget_forecast,
+        tag_compliance_score,
     ]
 )
 

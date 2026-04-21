@@ -1,8 +1,8 @@
 # FinOps Platform — 완전 구현 사양서
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
-> Phase 1 → … → Phase 18 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 18 완료 — Showback 리포트 asset + JSON export API + /api/showback, 360 tests pass.
+> Phase 1 → … → Phase 40 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
+> **현재 상태:** Phase 40 완료 — Team Detail API `/api/teams/{team}` + 드릴다운 페이지 `/teams/[team]` + Leaderboard 링크 연결, **601 tests pass**.
 
 ---
 
@@ -993,297 +993,837 @@ uv run mypy dagster_project
 - `tests/test_showback_report.py` (9개) 추가
 - **360 tests pass** ✅
 
+### Phase 19 — 비용 트렌드 분석 + 기간 비교
+
+- `dagster_project/assets/cost_trend.py` — `cost_trend` asset
+  - 모든 가용 월에 대해 (provider, team, env, service) 단위 월별 비용 롤업
+  - `dim_cost_trend` — DELETE+INSERT 멱등 (월 단위)
+  - `anomaly_scores`와 조인해 월별 이상치 건수 포함
+- `dagster_project/db_schema.py` — `dim_cost_trend` DDL 추가
+- `api/routers/cost_trend.py` — 트렌드 + 비교 엔드포인트
+  - `GET /api/cost-trend?provider=X&team=Y&env=Z&months=12` — 시계열 (최대 36개월)
+  - `GET /api/cost-trend/compare?period1=YYYY-MM&period2=YYYY-MM` — 기간 비교, MoM change%, 팀별 증감
+  - summary: latest_cost, mom_change_pct, avg_monthly_cost
+- `tests/test_cost_trend.py` (11개) 추가
+- **371 tests pass** ✅
+
+### Phase 20 — 알림 히스토리 영속화 + Acknowledge 워크플로우
+
+- `dagster_project/assets/alert_dispatch.py` — 발송 후 `dim_alert_history`에 INSERT
+  - `psycopg2.extras.execute_values()` 배치 INSERT
+  - `ensure_tables(conn, "dim_alert_history")` 자체 부트스트랩
+- `dagster_project/db_schema.py` — `dim_alert_history` DDL 추가 (id BIGSERIAL PK, acknowledged, acknowledged_at, acknowledged_by)
+- `api/routers/alerts.py` — 알림 히스토리 엔드포인트
+  - `GET /api/alerts?severity=X&acknowledged=false&alert_type=Y&limit=N` — 필터링 + 페이지네이션
+  - `POST /api/alerts/{id}/acknowledge` — acknowledge 워크플로우 (acknowledged_by 기록)
+  - summary: critical/warning/info/unacknowledged 집계
+- `api/main.py` — `alerts` 라우터 등록
+- `tests/test_alert_history.py` (13개) 추가
+- **384 tests pass** ✅
+
+### Phase 21 — Alerts 대시보드 페이지
+
+- `web-app/lib/types.ts` — `AlertHistoryItem`, `AlertSummary`, `AlertHistoryData` 타입 추가
+- `web-app/lib/api.ts` — `api.alerts()`, `api.acknowledgeAlert()` 메서드 추가
+- `web-app/app/(dashboard)/alerts/AlertsClient.tsx` — 클라이언트 컴포넌트
+  - KPI 카드: Critical / Warning / Info / Open(미확인) 건수
+  - severity 필터 (all/critical/warning/info), "Open only" 토글
+  - 테이블: 리소스·타입·실제비용·편차·발생시간·ACK/OPEN 상태
+  - "Ack" 버튼 → POST /api/alerts/{id}/acknowledge → 즉시 반영
+- `web-app/app/(dashboard)/alerts/page.tsx` — 페이지 래퍼
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Alerts" 내비 항목 추가
+- **384 tests pass** (프론트엔드 추가, Python 무변경) ✅
+
+### Phase 22 — 멀티클라우드 비교 API + Cloud Compare 대시보드
+
+- `api/routers/cloud_compare.py` — `GET /api/cloud-compare?billing_month=YYYY-MM&team=X`
+  - provider별 총비용·리소스 수·점유율
+  - provider별 상위 5개 서비스
+  - provider별 최근 6개월 월별 트렌드
+  - 팀별 provider 교차 비용 (team × provider 매트릭스)
+- `api/main.py` — `cloud_compare` 라우터 등록
+- `tests/test_cloud_compare.py` (11개) — 응답 형태·집계·정렬 검증
+- `web-app/app/(dashboard)/cloud-compare/page.tsx` — Server Component
+  - KPI 카드: AWS / GCP / Azure 비용 + 막대 게이지 + 점유율
+  - Provider별 상위 서비스 표
+  - 팀별 provider 교차 테이블
+  - 3-컬럼 sparkbar 트렌드
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Cloud Compare" 항목 추가
+- **395 tests pass** ✅
+
+### Phase 23 — 절감 실적 추적 (Savings Tracker)
+
+- `dagster_project/db_schema.py` — `dim_savings_realized` DDL 추가
+  - resource_id별 예상 절감액 vs 전월 대비 실제 절감액 비교
+  - status: `realized` / `partial` / `pending` / `cost_increased`
+- `dagster_project/assets/savings_tracker.py` — `savings_tracker` asset
+  - `dim_cost_recommendations` 기반, 전월 대비 `fact_daily_cost` 비용 비교
+  - 80% 이상 실현 시 `realized`, 부분 실현 시 `partial`, 비용 증가 시 `cost_increased`
+  - DELETE+INSERT 멱등 (billing_month 단위)
+- `dagster_project/definitions.py` — `savings_tracker` 등록
+- `api/routers/savings.py` — `GET /api/savings?billing_month=X&team=Y&status=Z`
+  - summary: total_estimated, total_realized, realized/partial/pending/cost_increased 건수
+- `api/main.py` — `savings` 라우터 등록
+- `tests/test_savings_tracker.py` (10개) 추가
+- **405 tests pass** ✅
+
+### Phase 24 — Savings 대시보드 페이지 + Cost Heatmap API
+
+- `api/routers/cost_heatmap.py` — `GET /api/cost-heatmap?billing_month=X&provider=Y&team=Z`
+  - 일별·팀별 비용 매트릭스 반환 (rows=teams, cols=dates, values=cost)
+  - max_cost 포함 — 클라이언트 정규화 용이
+- `api/main.py` — `cost_heatmap` 라우터 등록
+- `tests/test_cost_heatmap.py` (10개) — 형태·정합성·날짜 순서 검증
+- `web-app/app/(dashboard)/savings/page.tsx` — Server Component
+  - KPI 카드: 예상 절감액 / 실현 절감액 / 실현율% / 추천 수
+  - 상태 요약 pill (Realized/Partial/Pending/Cost Increased)
+  - 전체 추천별 표 (resource, 예상/실현/전월/현재 비용, StatusBadge)
+- `web-app/lib/types.ts` — `SavingsItem`, `SavingsSummary`, `SavingsData`, `CostHeatmapData`, `HeatmapRow` 타입 추가
+- `web-app/lib/api.ts` — `api.savings()`, `api.costHeatmap()` 메서드 추가
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Savings" 항목 추가
+- **415 tests pass** ✅
+
+### Phase 25 — 비용-리스크 상관 API
+
+- `api/routers/cost_risk.py` — `GET /api/cost-risk?billing_month=X&provider=Y&team=Z&min_anomaly_count=N&limit=M`
+  - 리소스별 총비용 × 이상치 빈도 기반 risk_score 계산 (정규화 곱)
+  - `anomaly_scores` 테이블 없을 경우 graceful fallback (has_anomaly_data=false)
+  - summary: total_resources, total_cost, total_anomalies, has_anomaly_data
+- `api/main.py` — `cost_risk` 라우터 등록
+- `tests/test_cost_risk.py` (10개) 추가
+- **425 tests pass** ✅
+
+### Phase 26 — Risk 대시보드 + 리소스 드릴다운 API
+
+- `api/routers/resource_detail.py` — `GET /api/resources/{resource_id}?months=N`
+  - 리소스별 월별 비용 히스토리 (최대 N개월, 데이터 최신일 기준 앵커)
+  - 최근 30일 일별 비용
+  - 이상치 이력 (anomaly_scores 없으면 빈 배열)
+  - summary: total_cost, avg_monthly_cost, latest_month_cost, anomaly_count, months_tracked
+- `web-app/app/(dashboard)/risk/page.tsx` — Server Component
+  - KPI 카드: 리소스 수 / 총비용 / 이상치 이벤트 수
+  - 상위 위험 리소스 callout (risk_score > 0)
+  - 전체 리소스 표: 팀·provider·서비스·비용·이상치수·RiskBar
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Risk" 항목 추가
+- `tests/test_resource_detail.py` (9개) 추가
+- **434 tests pass** ✅
+
+### Phase 27 — 팀 리더보드 + 서비스 카테고리 브레이크다운 API
+
+- `api/routers/leaderboard.py` — `GET /api/leaderboard?billing_month=X&provider=Y&limit=N`
+  - 팀별 당월/전월 비용, MoM change%, 총비용 점유율, 리소스 수
+  - 순위(rank) 필드 포함, 순서는 당월 비용 내림차순
+- `api/routers/service_breakdown.py` — `GET /api/service-breakdown?billing_month=X&team=Y&provider=Z`
+  - service_category별 집계 (by_category)
+  - 서비스명별 top 15 (by_service)
+  - grand_total, pct 포함
+- `api/main.py` — 두 라우터 등록
+- `tests/test_leaderboard.py` (15개) 추가
+- **449 tests pass** ✅
+
+### Phase 28 — Leaderboard + Services 대시보드 페이지
+
+- `web-app/app/(dashboard)/leaderboard/page.tsx` — Server Component
+  - KPI 카드: 총지출 (MoM badge), 팀 수, 전월 지출
+  - 순위 표: #(메달), 팀명, 당월/전월 비용, MoM%, 점유율 bar, 리소스 수
+- `web-app/app/(dashboard)/services/page.tsx` — Server Component
+  - service_category별 가로 PctBar 목록 (색상 팔레트)
+  - 상위 15 서비스 표 (서비스명, 카테고리, 비용, %)
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Leaderboard", "Services" 항목 추가
+- **449 tests pass** (프론트엔드 추가, Python 무변경) ✅
+
+### Phase 29 — 예산 예측 asset + /api/budget-forecast
+
+- `dagster_project/db_schema.py` — `dim_budget_forecast` DDL 추가
+  - 팀/환경별 선형 외삽 EOM 예측 + ±20% 신뢰구간
+  - risk_level: `normal` / `warning`(80%+) / `over`(100%+)
+- `dagster_project/assets/budget_forecast.py` — `budget_forecast` asset
+  - 데이터 최신 billing_month 자동 감지
+  - `budget_store.get_budget(team, env)` 로 예산 조회 후 projected_pct 계산
+  - DELETE+INSERT 멱등
+- `dagster_project/definitions.py` — `budget_forecast` 등록
+- `api/routers/budget_forecast.py` — `GET /api/budget-forecast?billing_month=X&team=Y&risk_level=Z`
+  - summary: total_projected_eom, over/warning/normal 건수
+- `api/main.py` — `budget_forecast` 라우터 등록
+- `tests/test_budget_forecast.py` (10개) 추가
+- **459 tests pass** ✅
+
+### Phase 30 — Budget Forecast 대시보드 + /api/env-breakdown
+
+- `web-app/app/(dashboard)/budget-forecast/page.tsx` — Server Component
+  - KPI 카드: 예상 EOM 합계, Over/Warning/On-track 건수
+  - 표: 팀·환경, 진행 ProjectionBar (MTD/예상/예산/경과일 마커), 신뢰구간, 예산, 예상%, RiskBadge
+- `web-app/app/(dashboard)/Sidebar.tsx` — "Budget Forecast" 항목 추가
+- `api/routers/env_breakdown.py` — `GET /api/env-breakdown?billing_month=X&provider=Y`
+  - 환경별 집계 (env, cost, resource_count, team_count, pct)
+  - env × team 교차표 (cross_tab)
+- `api/main.py` — `env_breakdown` 라우터 등록
+- `tests/test_env_breakdown.py` (9개) 추가
+- **468 tests pass** ✅
+
+### Phase 31 — Tag Compliance Score + Env Breakdown 대시보드
+
+- `dagster_project/assets/tag_compliance_score.py` — `tag_compliance_score` asset
+  - `dim_resource_inventory` + `dim_tag_violations` 조인으로 team×provider 준수율 점수 계산
+  - 점수 공식: 태그 완성도% - 위반 패널티(위반당 5점, 최대 30점)
+  - `dim_tag_compliance` — DELETE+INSERT 멱등 (billing_month 단위), 순위(rank) 포함
+- `dagster_project/db_schema.py` — `dim_tag_compliance` DDL 추가
+- `api/routers/tag_compliance.py` — `GET /api/tag-compliance?billing_month=X&provider=Y&team=Z`
+  - 응답: billing_month, summary(avg_score, perfect_count, below_threshold_count, total_teams), teams[]
+  - 테이블 미존재 시 자동 생성 (graceful bootstrap)
+- `api/routers/env_breakdown.py` 기반 `web-app/app/(dashboard)/env-breakdown/page.tsx` — Server Component
+  - KPI 카드 4개, 환경별 비용 바, env×team 교차 테이블
+- `web-app/app/(dashboard)/tag-compliance/page.tsx` — Server Component
+  - KPI 카드 4개, 팀별 준수율 점수 표, 색상 기반 점수 게이지
+- `tests/test_tag_compliance.py` (10개) 추가
+- **477 tests pass** ✅
+
+### Phase 32 — Anomaly Timeline + Cloud Config + 디자인 통일
+
+- `api/routers/anomaly_timeline.py` — `GET /api/anomaly-timeline?months=N&provider=Y&team=Z&severity=S`
+  - anomaly_scores 기반 월별 시계열, MAX(charge_date) 앵커로 안정적 집계
+  - provider 필터: `resource_id IN (SELECT DISTINCT resource_id FROM fact_daily_cost WHERE provider=%s)` 서브쿼리
+  - 응답: series[], top_teams[], summary
+- `api/routers/cloud_config.py` — Cloud 연동 설정 API
+  - `GET /api/cloud-config` — provider별 전체 설정 반환
+  - `PUT /api/cloud-config` — 단일 키 업데이트 (provider/key/value 검증)
+  - `GET /api/cloud-config/status` — enabled/configured/missing_keys 상태
+- `dagster_project/resources/settings_store.py` — 클라우드 설정 15개 기본값 추가 (cloud.aws.*, cloud.gcp.*, cloud.azure.*)
+- `web-app/app/(dashboard)/anomaly-timeline/page.tsx` — Server Component, 월별 이상치 시계열 표
+- `web-app/app/(dashboard)/settings/CloudConfigClient.tsx` — 클라이언트 컴포넌트
+  - AWS/GCP/Azure 카드, 활성화 토글, 인라인 편집, 시크릿 env var 힌트
+- `web-app/app/(dashboard)/settings/page.tsx` — CloudConfigClient 추가
+- **디자인 통일 (전면 점검)**:
+  - `web-app/components/layout/PageHeader.tsx` — 28px 타이틀로 통일 (clamp 제거)
+  - `web-app/components/layout/Sidebar.tsx` (실제 파일) — 20개 플랫 메뉴 → 5개 카테고리 그룹 드롭다운
+    - Costs / Anomalies / Budget / Compliance / Operations 그룹
+    - `useEffect`로 현재 경로 그룹 자동 열림
+  - 9개 페이지 전면 재작성: budget-forecast, cloud-compare, leaderboard, risk, services, savings, env-breakdown, tag-compliance, anomaly-timeline
+    - `var(--bg-card)`, `var(--text-muted)`, `var(--accent)` → 올바른 토큰으로 교체
+    - 인라인 h1 → `<PageHeader>`, 커스텀 div → `<Card>/<CardHeader>`, KPI → `<MetricCard>`
+    - 표 헤더 패딩 패턴 통일
+- `docs/ui-components.md` — 디자인 통일성 가이드 (단일 소스 오브 트루스)
+  - CSS 토큰 표, 금지 패턴, 컴포넌트 사용 규칙, 표준 테이블 패턴, 페이지 구조 템플릿
+- `tests/test_cloud_config.py` (11개) 추가
+- `tests/test_anomaly_timeline.py` (10개) 추가
+- **498 tests pass** ✅
+
+### Phase 33 — Inventory / Showback / Tag Policy 대시보드 페이지
+
+- `web-app/app/(dashboard)/inventory/page.tsx` — Server Component
+  - KPI 카드: 총 리소스, 태그 완성, 불완전, 완성도%
+  - 전체 리소스 표: Resource/Service/Provider/Team/Env/30d Cost/Tags
+  - Tags OK / missing: {tag} pill 표시 (tool tip 포함)
+- `web-app/app/(dashboard)/showback/page.tsx` — Server Component
+  - KPI 카드: 총비용, 팀 수, 예산 초과 팀, 이상치 수
+  - 팀 요약 표: Total Cost / Budget / 진행률 bar / 이상치
+  - 팀별 상세 카드 그리드: Top Services + Top Resources 목록
+  - "Export JSON" 버튼 → `/api/showback/export` 직접 다운로드
+- `web-app/app/(dashboard)/tag-policy/page.tsx` — Server Component
+  - KPI 카드: 총 위반, Critical, Warning, 리스크 비용(30d)
+  - 위반 표: Resource/Provider/Team/Env/Missing Tag(코드 스타일 pill)/Severity/30d Cost
+- `web-app/app/(dashboard)/burn-rate/page.tsx` — 재작성 (디자인 수정)
+  - `var(--bg-card)`, `var(--font-mono)`, `var(--border-subtle)` → 올바른 토큰으로 수정
+  - TypeScript 오류 수정: `BurnRateSummary` 타입 명시적 사용
+  - `MetricCard`, `Card`, `CardHeader`, `EmptyState` 컴포넌트 사용
+- `web-app/components/layout/Sidebar.tsx` — Compliance 그룹에 tag-policy, inventory 추가; Budget 그룹에 showback 추가
+  - `Package`, `ClipboardText`, `Prohibit` 아이콘 추가 (@phosphor-icons/react)
+- `web-app/app/(dashboard)/data-quality/DataQualityClient.tsx` — TypeScript 오류 수정 (`CardHeader style` prop 제거)
+- **498 tests pass** ✅ (Python 파이프라인 무변경)
+
+### Phase 34 — Cost Trend 대시보드 페이지
+
+- `web-app/app/(dashboard)/cost-trend/page.tsx` — Server Component
+  - KPI 카드: Latest Month, Latest Cost, MoM Change%, Avg Monthly
+  - 월별 가로 바 차트 (TrendBar: 최대값 기준 정규화)
+  - Monthly Detail 표: billing_month / total_cost / resources / anomalies
+  - Period Comparison 섹션: 최근 2개월 자동 비교
+    - 요약 행: period1 → period2 총비용, 전체 변화액, MoMBadge
+    - 팀×환경×provider 상세 표: period1/period2 비용, 변화액, Δ% 뱃지
+- `web-app/components/layout/Sidebar.tsx` — Costs 그룹에 `/cost-trend` 추가 (TrendUp 아이콘)
+- **498 tests pass** ✅ (Python 파이프라인 무변경)
+
+### Phase 35 — Resource Detail 드릴다운 페이지
+
+- `web-app/app/(dashboard)/resources/[id]/page.tsx` — 동적 Server Component
+  - KPI 카드: Total Cost, Avg Monthly, Latest Month, Anomaly Count
+  - Daily Cost 바 차트 (최근 30일, maxCost 기준 정규화)
+  - Monthly History 표: billing_month / cost / team / env pill
+  - Anomaly History 표: date / cost / z-score σ / severity pill / detector
+  - ← Inventory 돌아가기 링크
+- `web-app/app/(dashboard)/inventory/page.tsx` — 리소스명에 `/resources/{id}` 링크 추가
+- **498 tests pass** ✅ (Python 파이프라인 무변경)
+
+### Phase 36 — Cost Allocation 대시보드 페이지
+
+- `web-app/app/(dashboard)/cost-allocation/page.tsx` — Server Component
+  - KPI 카드: 규칙 수, 고유 리소스, 팀 수, 총 배분 금액
+  - `AllocationClient` + 초기 데이터 전달
+- `web-app/app/(dashboard)/cost-allocation/AllocationClient.tsx` — 클라이언트 컴포넌트
+  - Allocation Rules 표: resource_id / team / split% (인라인 편집) / description / Edit+Delete 버튼
+  - "Add Rule" 인라인 폼 (resource_id / team / split% / description)
+  - 삭제 확인 (Check/X 패턴)
+  - Allocated Costs 표: team / resource / service / provider / split% / allocated / original 비용
+- `web-app/components/layout/Sidebar.tsx` — Budget 그룹에 `/cost-allocation` 추가 (Rows 아이콘)
+- **498 tests pass** ✅ (Python 파이프라인 무변경)
+
+### Phase 37 — API 엔드포인트 테스트 보강 (커버리지 92%)
+
+저커버리지 API 라우터(15~40%)에 TestClient 기반 테스트 7개 파일 추가:
+
+- `tests/test_api_overview.py` (10개) — /api/overview: 200, shape, total_cost, cost_by_team, top_resources, provider/date 필터
+- `tests/test_api_anomalies.py` (9개) — /api/anomalies: 200, shape, severity 필터, team 필터, item 필드, limit
+- `tests/test_api_filters.py` (7개) — /api/filters: 200, shape, providers 알려진 값, billing_months 정렬, date_range
+- `tests/test_api_cost_explorer.py` (10개) — /api/cost-explorer: 200, shape, daily/service/provider 필드, team/provider/env/date 필터
+- `tests/test_api_budget.py` (8개) — /api/budget + entries + CRUD 왕복 (create→update→delete, 409 중복)
+- `tests/test_api_settings.py` (8개) — /api/settings + 풀 CRUD 왕복, 409/404 에러
+- `tests/test_api_forecast.py` (6개) — /api/forecast: shape, totals, item 필드, source 값, bounds 순서
+- `tests/test_api_chargeback.py` (7개) — /api/chargeback: shape, totals, by_team 필드, pct 합계, billing_month 필터
+- `tests/test_api_recommendations.py` (6개) — /api/recommendations: shape, rule_type 값, potential_savings
+
+결과: **570 tests pass, API 커버리지 92%** ✅
+
+### Phase 38 — Overview 페이지 강화
+
+- `web-app/app/(dashboard)/overview/page.tsx` — Server Component 전면 개선
+  - `fetchProviderCosts()` — `/api/cost-explorer` `by_provider` 데이터로 클라우드별 비용 breakdown 카드 추가
+  - `fetchRecentTrend()` — `/api/cost-trend?months=6` 데이터로 6개월 sparkline 바 차트 추가
+  - `Promise.all([fetchProviderCosts(), fetchRecentTrend()])` 병렬 fetch
+  - Top Resources 표: resource_id → `/resources/{id}` 드릴다운 링크 (Link 컴포넌트)
+  - Provider breakdown: `ProviderBadge` + 비용 + pct% + 진행 바
+  - Trend sparkline: MoM change badge (isUp: critical/healthy 색상), "View full trend →" 링크
+  - 레이아웃: Row 1 (teams 2fr + provider 1fr), Row 2 (resources 3fr + trend 2fr)
+  - `export const dynamic = "force-dynamic"` + `PROVIDER_COLORS` CSS 변수 매핑
+
+- **570 tests pass** ✅
+
+### Phase 39 — Cost Heatmap + Cloud Config 대시보드
+
+- `web-app/app/(dashboard)/cost-heatmap/page.tsx` — Server Component
+  - `/api/cost-heatmap` 데이터로 팀 × 일자 CSS grid 히트맵 렌더링
+  - `heatColor()` — 값 비율에 따라 `rgb(59,46,34) → rgb(217,119,87)` 색상 보간
+  - 날짜 헤더 + 팀 행 + 일별 합계 행 + 컬러 범례
+  - 피크 날짜 callout (vs 월평균 대비 증감%)
+  - KPI: 총비용 / 팀 수 / 데이터 일수 / 팀당 평균
+- `web-app/app/(dashboard)/cloud-config/CloudConfigClient.tsx` — Client Component
+  - AWS/GCP/Azure 3개 provider 섹션 (Enabled 토글 + field 인라인 편집)
+  - `PUT /api/cloud-config` 호출로 즉시 저장 (Enter 저장, Escape 취소)
+  - `GET /api/cloud-config/status` 로 missing_keys 피드백 표시
+- `web-app/app/(dashboard)/cloud-config/page.tsx` — Server Component 래퍼
+  - `Promise.all([fetchConfig(), fetchStatus()])` 병렬 fetch
+  - KPI: 활성 provider 수 / 완전 설정 수 / 누락 필드 수
+- `Sidebar.tsx` — "Cost Heatmap", "Cloud Config" 항목 추가
+- `tests/test_api_cost_heatmap.py` (10개) — shape/max/dates정렬/team필터 검증
+- `tests/test_api_cloud_config.py` (11개) — GET/PUT/status/에러 검증
+
+- **591 tests pass** ✅
+
+### Phase 40 — Team Detail API + 드릴다운 페이지
+
+- `api/routers/team_detail.py` — `GET /api/teams/{team}?months=N`
+  - 404 반환 (팀 미존재 시)
+  - `monthly_trend`: 최근 N개월 팀 비용 + 리소스 수 시계열
+  - `by_service`: 당월 서비스별 비용 Top-10 + pct
+  - `by_env`: 당월 환경별 비용 + pct
+  - `by_provider`: 당월 provider별 비용 + pct
+  - `top_resources`: 당월 리소스별 비용 Top-10
+  - `anomalies`: 최근 이상치 10건 (anomaly_scores 없으면 빈 배열)
+  - `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, anomaly_count
+- `api/main.py` — `team_detail` 라우터 등록
+- `api/routers/__init__.py` — `team_detail` 추가
+- `web-app/app/(dashboard)/teams/[team]/page.tsx` — Server Component
+  - ← Leaderboard 뒤로 링크
+  - KPI 카드 4개 (당월 비용, MoM%, 리소스 수, 이상치 수)
+  - 6개월 trend sparkline 바 차트
+  - 환경별 + Provider별 TrendBar
+  - Top Services 표 + Top Resources 표 (resource_id → `/resources/{id}` 링크)
+  - 최근 이상치 테이블 (SeverityBadge, z-score, 리소스 링크)
+- `web-app/app/(dashboard)/leaderboard/page.tsx` — 팀명 → `/teams/{team}` 링크 추가
+- `tests/test_api_team_detail.py` (10개) — shape/404/sorted/pct/months param 검증
+
+- **601 tests pass** ✅
+
 ---
 
-## 15. Phase 9 — 대시보드 확장
+## 15. 현재 대시보드 페이지 현황 (Phase 40 기준)
 
-Phase 8.1에서 Overview 페이지 MVP가 검증됐다. Phase 9는 나머지 핵심 뷰를 API + 페이지 단위로 증분 추가한다.
+### 구현 완료된 페이지 및 연결 API
 
-### 추가할 API 엔드포인트 (`api/main.py`)
-
-| 엔드포인트 | 데이터 소스 | 핵심 응답 |
+| 경로 | API 엔드포인트 | 설명 |
 |---|---|---|
-| `GET /api/anomalies` | `anomaly_scores` | severity별 목록, resource/team 필터 |
-| `GET /api/forecast` | `dim_forecast`, `dim_prophet_forecast` | resource별 예측 vs 실제 |
-| `GET /api/budget` | `dim_budget_status` | 팀/env별 예산 사용률, over/warning 목록 |
-| `GET /api/cost-explorer` | `fact_daily_cost` | 날짜·team·service·env 필터링, 일별 시계열 |
-| `GET /api/recommendations` | `dim_cost_recommendations` | 규칙별 추천 목록 |
+| `/overview` | `/api/overview`, `/api/cost-explorer`, `/api/cost-trend` | KPI 4개, 팀별 비용 바, provider 비용, 6개월 트렌드 |
+| `/cost-explorer` | `/api/cost-explorer`, `/api/filters` | 일별 비용 바 차트, team/provider/env/date 필터 |
+| `/anomalies` | `/api/anomalies` | 이상치 목록, severity/team 필터, detector 이름 |
+| `/forecast` | `/api/forecast` | Prophet/Infracost 예측 vs 실제, 신뢰구간 |
+| `/budget` | `/api/budget`, `/api/budget/entries` | 팀별 예산 게이지, BudgetManager CRUD UI |
+| `/recommendations` | `/api/recommendations` | idle/high_growth/persistent_anomaly 추천 카드 |
+| `/chargeback` | `/api/chargeback` | 팀별 비용 배부, 월 선택 필터 |
+| `/ops` | `/api/ops/runs`, `/api/ops/health` | Pipeline 실행 로그, 테이블 헬스, Prometheus metrics |
+| `/data-quality` | `/api/data-quality`, `/api/export/{table}` | 자동 검증 결과, CSV export 링크 |
+| `/burn-rate` | `/api/burn-rate` | MTD/EOM 예상, 팀·환경별 게이지 바 |
+| `/alerts` | `/api/alerts`, `/api/alerts/{id}/acknowledge` | severity 필터, Ack 워크플로우 |
+| `/cloud-compare` | `/api/cloud-compare` | provider별 비용/점유율/서비스/팀 매트릭스 |
+| `/savings` | `/api/savings` | 절감 실적 추적, realized/partial/pending 상태 |
+| `/risk` | `/api/cost-risk` | 리소스 비용×이상치 risk score 매트릭스 |
+| `/leaderboard` | `/api/leaderboard` | 팀 비용 순위, MoM badge, 팀명 → `/teams/{team}` 링크 |
+| `/services` | `/api/service-breakdown` | 카테고리별·서비스명별 비용 분석 |
+| `/budget-forecast` | `/api/budget-forecast` | 팀별 EOM 예측 + 신뢰구간, risk badge |
+| `/env-breakdown` | `/api/env-breakdown` | 환경별 교차표, 팀×환경 cost 매트릭스 |
+| `/tag-compliance` | `/api/tag-compliance` | 팀별 태그 준수율 점수, 색상 게이지 |
+| `/anomaly-timeline` | `/api/anomaly-timeline` | 월별 이상치 시계열, top 팀 집계 |
+| `/settings` | `/api/settings`, `/api/cloud-config` | 플랫폼 설정 CRUD + Cloud 연결 설정 섹션 |
+| `/inventory` | `/api/inventory` | 리소스 인벤토리, 태그 완성도, `/resources/{id}` 링크 |
+| `/showback` | `/api/showback`, `/api/showback/export` | 팀별 쇼백 리포트, JSON export |
+| `/tag-policy` | `/api/tag-policy` | 태그 위반 목록, missing tag 코드 pill |
+| `/cost-trend` | `/api/cost-trend`, `/api/cost-trend/compare` | 월별 바 차트, 기간 비교 섹션 |
+| `/cost-allocation` | `/api/cost-allocation/rules`, `/api/cost-allocation` | 배분 규칙 CRUD, 배분된 비용 조회 |
+| `/cost-heatmap` | `/api/cost-heatmap` | 팀 × 일자 CSS grid 히트맵, 피크 날짜 callout |
+| `/cloud-config` | `/api/cloud-config`, `/api/cloud-config/status` | AWS/GCP/Azure 연결 설정 인라인 편집 |
+| `/resources/[id]` | `/api/resources/{resource_id}` | 리소스 드릴다운: 일별 비용, 월별 히스토리, 이상치 |
+| `/teams/[team]` | `/api/teams/{team}` | 팀 드릴다운: 트렌드, 서비스/환경/provider 분석, 리소스 |
 
-### 추가할 대시보드 페이지 (`web-app/app/(dashboard)/`)
+### 구현 완료된 API 엔드포인트 전체 목록
 
-| 경로 | 설명 |
-|---|---|
-| `anomalies/page.tsx` | 이상치 목록, severity 배지, detector 이름 |
-| `forecast/page.tsx` | 예측 vs 실제 비교 테이블 |
-| `budget/page.tsx` | 팀별 예산 게이지 바, 초과/경고 하이라이트 |
-| `cost-explorer/page.tsx` | 날짜 범위 + team/env 필터, 일별 비용 바 차트 |
-| `recommendations/page.tsx` | idle/high_growth/persistent_anomaly 카드 |
-
-### 설계 원칙
-
-- **API**: 모든 엔드포인트는 `api/main.py` 단일 파일 유지. 라우터 분리는 엔드포인트 10개 초과 시.
-- **페이지**: 각 페이지는 Server Component 기본. 필터·인터랙션 필요 시만 `"use client"` 분리.
-- **데이터 fetch**: `next: { revalidate: 60 }` — 1분 캐시, 실시간 필요 없음.
-- **차트**: 순수 CSS/SVG 또는 경량 라이브러리. Recharts/Chart.js 중 하나만 선택 시 도입.
-- **사이드바**: `layout.tsx`에서 링크 목록을 배열로 관리, 페이지 추가 시 배열에만 추가.
-
-### 구현 순서
-
-1. `GET /api/anomalies` + `anomalies/page.tsx`
-2. `GET /api/budget` + `budget/page.tsx`
-3. `GET /api/cost-explorer` + `cost-explorer/page.tsx` (필터 포함)
-4. `GET /api/forecast` + `forecast/page.tsx`
-5. `GET /api/recommendations` + `recommendations/page.tsx`
-6. 사이드바 활성 링크 하이라이트 (`usePathname`)
-
----
-
-## 16. Phase 10 — API 아키텍처 리팩토링 + Budget CRUD + 대시보드 UX
-
-Phase 9에서 단일 `api/main.py` 592줄에 모든 엔드포인트가 쌓였다. Phase 10은 프로덕션 운영에 필요한 **구조·보안·UX**를 보강한다.
-
-### 10.1 API 재구조화 (router/model/deps 분리)
-
-```
-api/
-├── main.py              # 슬림 엔트리 (FastAPI app + include_router + CORS + /health)
-├── deps.py              # 공통 의존성: db_read/db_write 컨텍스트매니저, f(), tables(), columns()
-├── models/              # Pydantic 요청·응답 모델
-│   ├── __init__.py      # 모든 모델 re-export
-│   ├── anomalies.py
-│   ├── budget.py        # BudgetCreateRequest, BudgetUpdateRequest, BudgetEntry ...
-│   ├── chargeback.py
-│   ├── cost_explorer.py # ProviderCost 추가
-│   ├── filters.py       # FiltersResponse — 드롭다운 옵션 단일 라운드트립
-│   ├── forecast.py
-│   ├── overview.py
-│   ├── recommendations.py
-│   └── settings.py      # SettingCreateRequest, SettingUpdateRequest
-└── routers/             # 엔드포인트 (APIRouter 단위)
-    ├── overview.py          # + start/end/provider 쿼리 파라미터
-    ├── anomalies.py
-    ├── forecast.py
-    ├── budget.py            # GET status + GET/POST/PUT/DELETE entries (CRUD)
-    ├── cost_explorer.py     # + provider 필터, 파라미터화 쿼리
-    ├── recommendations.py
-    ├── chargeback.py        # + billing_month 쿼리, available_months 응답
-    ├── filters.py           # GET /api/filters
-    └── settings.py          # GET/POST/PUT/DELETE (풀 CRUD)
-```
-
-### 10.2 신규/확장 엔드포인트
-
-| 메서드 | 경로 | 역할 |
+| 엔드포인트 | 라우터 파일 | 테스트 파일 |
 |---|---|---|
-| GET  | `/health` | 라이브니스 체크 |
-| GET  | `/api/filters` | teams/envs/providers/services/billing_months/date_min/date_max 단일 응답 (드롭다운용) |
-| GET  | `/api/budget/entries` | `dim_budget` 원본 행 (CRUD UI용) |
-| POST | `/api/budget` | 신규 예산 (409 on conflict) |
-| PUT  | `/api/budget/{team}/{env}?billing_month=default` | 금액 갱신 |
-| DELETE | `/api/budget/{team}/{env}?billing_month=default` | 삭제 (204) |
-| POST | `/api/settings` | 신규 설정 생성 (key/value/value_type/description, 409 on conflict) |
-| PUT  | `/api/settings/{key}` | `platform_settings.value` 갱신 |
-| DELETE | `/api/settings/{key}` | 설정 삭제 (204) |
-| GET  | `/api/cost-explorer?provider=aws&start=...&end=...` | provider 필터 추가, 응답에 `by_provider[]` |
-| GET  | `/api/chargeback?billing_month=2026-03` | 월 선택 + `available_months[]` 반환 |
-| GET  | `/api/overview?start=...&end=...&provider=...` | 날짜 범위 + provider 필터 |
-
-### 10.3 DB 접근 패턴
-
-`api/deps.py` — PostgreSQL (psycopg2):
-
-```python
-@contextmanager
-def db_read() -> Generator[psycopg2.extensions.connection, None, None]:
-    conn = psycopg2.connect(_PG_DSN)
-    conn.autocommit = True
-    try: yield conn
-    finally: conn.close()
-
-@contextmanager
-def db_write() -> Generator[psycopg2.extensions.connection, None, None]:
-    conn = psycopg2.connect(_PG_DSN)
-    conn.autocommit = True
-    try: yield conn
-    finally: conn.close()
-```
-
-- PostgreSQL은 멀티 프로세스 동시 접근을 네이티브 지원 → DuckDB와 달리 read_only/retry 불필요
-- 모든 동적 쿼리는 파라미터 바인딩 (`cur.execute("... WHERE team = %s", [team])`) — SQL 인젝션 방지
-- `conn.autocommit = True` — DDL/DML 즉시 반영
-
-### 10.4 프론트엔드 변경사항
-
-- `web-app/lib/api.ts` — `get()`/`getFresh()`/`send()` 헬퍼 + 신규 메서드 (budgetEntries, createBudget, updateBudget, deleteBudget, updateSetting, filters 등)
-- `app/(dashboard)/budget/BudgetManager.tsx` — NEW 클라이언트 컴포넌트:
-  - Add 폼 (team/env/amount/billing_month)
-  - 인라인 편집 (PencilSimple → Check/X)
-  - 삭제 확인 (Trash)
-- `app/(dashboard)/settings/SettingsClient.tsx` — 풀 CRUD: 인라인 편집 (Enter 저장, Escape 취소) + Add Setting 폼 (key/value/type/description) + 삭제 확인
-- `app/(dashboard)/cost-explorer/CostExplorerClient.tsx` — provider/service 드롭다운, 날짜 범위, "Clear N filters" 버튼, provider breakdown 카드 (provider 2개 이상일 때)
-- `app/(dashboard)/chargeback/ChargebackClient.tsx` — 월 선택 드롭다운 + `available_months` 로딩
-
-### 10.5 설계 원칙 (Phase 9와의 차이)
-
-| 항목 | Phase 9 | Phase 10 |
-|---|---|---|
-| API 파일 구조 | `api/main.py` 단일 파일 | router/model/deps 분리 |
-| DB 커넥션 | 매 요청마다 `duckdb.connect(path)` | `db_read()` / `db_write()` 컨텍스트매니저 |
-| 쓰기 락 충돌 | 고려 안함 | 지수 백오프 retry (Dagster 공존) |
-| SQL 동적 생성 | f-string 일부 | 모든 값 파라미터 바인딩 |
-| 필터 옵션 | overview 응답에 포함 | `/api/filters` 단일 엔드포인트 |
-| Budget | 읽기 전용 | POST/PUT/DELETE CRUD |
-| Settings | 읽기 전용 | POST/PUT/DELETE 풀 CRUD |
-| Cost Explorer | team/env/날짜 | + provider, by_provider 집계 |
-| Chargeback | 최신 월만 | 월 선택 + 과거 월 조회 |
-
-### 10.6 검증
-
-```bash
-# 전체 엔드포인트 헬스체크
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/health
-for p in /api/overview /api/anomalies /api/forecast /api/budget /api/budget/entries \
-         /api/cost-explorer /api/recommendations /api/chargeback /api/filters /api/settings; do
-  echo "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000$p)  $p"
-done
-# 모두 200 기대
-
-# Budget CRUD 왕복
-curl -X POST http://localhost:8000/api/budget \
-  -H 'Content-Type: application/json' \
-  -d '{"team":"demo","env":"dev","budget_amount":100,"billing_month":"default"}'
-curl -X PUT 'http://localhost:8000/api/budget/demo/dev?billing_month=default' \
-  -H 'Content-Type: application/json' -d '{"budget_amount":200}'
-curl -X DELETE 'http://localhost:8000/api/budget/demo/dev?billing_month=default'
-```
-
-### 10.7 남은 과제
-
-- 실제 클라우드 API 연동 (AWS CUR S3, GCP Billing Export, Azure Cost Management)
-- 팀별 데이터 접근 제어 (인증·인가)
-- 이메일 AlertSink Streamlit 설정 UI
-- pytest 기반 FastAPI 라우터 통합 테스트 (`TestClient`)
+| `GET /api/overview` | `routers/overview.py` | `test_api_overview.py` |
+| `GET /api/anomalies` | `routers/anomalies.py` | `test_api_anomalies.py` |
+| `GET /api/forecast` | `routers/forecast.py` | `test_api_forecast.py` |
+| `GET /api/budget`, `POST`, `PUT`, `DELETE` | `routers/budget.py` | `test_api_budget.py` |
+| `GET /api/cost-explorer` | `routers/cost_explorer.py` | `test_api_cost_explorer.py` |
+| `GET /api/recommendations` | `routers/recommendations.py` | `test_api_recommendations.py` |
+| `GET /api/chargeback` | `routers/chargeback.py` | `test_api_chargeback.py` |
+| `GET /api/settings`, `POST`, `PUT`, `DELETE` | `routers/settings.py` | `test_api_settings.py` |
+| `GET /api/filters` | `routers/filters.py` | `test_api_filters.py` |
+| `GET /api/ops/runs`, `/health`, `/live`, `/ready`, `/metrics` | `routers/ops.py` | `test_api_ops.py` |
+| `GET /api/data-quality` | `routers/data_quality.py` | `test_data_quality.py` |
+| `GET /api/export/{table}` | `routers/data_quality.py` | — |
+| `GET /api/burn-rate` | `routers/burn_rate.py` | `test_burn_rate.py` |
+| `GET /api/inventory` | `routers/inventory.py` | `test_resource_inventory.py` |
+| `GET /api/tag-policy` | `routers/tag_policy.py` | `test_tag_policy.py` |
+| `GET /api/cost-allocation/rules`, `POST`, `PUT`, `DELETE` | `routers/cost_allocation.py` | `test_cost_allocation.py` |
+| `GET /api/cost-allocation` | `routers/cost_allocation.py` | `test_cost_allocation.py` |
+| `GET /api/showback`, `/export` | `routers/showback.py` | `test_showback_report.py` |
+| `GET /api/cost-trend`, `/compare` | `routers/cost_trend.py` | `test_cost_trend.py` |
+| `GET /api/alerts`, `POST /api/alerts/{id}/acknowledge` | `routers/alerts.py` | `test_alert_history.py` |
+| `GET /api/cloud-compare` | `routers/cloud_compare.py` | `test_cloud_compare.py` |
+| `GET /api/savings` | `routers/savings.py` | `test_savings_tracker.py` |
+| `GET /api/cost-heatmap` | `routers/cost_heatmap.py` | `test_api_cost_heatmap.py` |
+| `GET /api/cost-risk` | `routers/cost_risk.py` | `test_cost_risk.py` |
+| `GET /api/resources/{resource_id}` | `routers/resource_detail.py` | `test_resource_detail.py` |
+| `GET /api/leaderboard` | `routers/leaderboard.py` | `test_leaderboard.py` |
+| `GET /api/service-breakdown` | `routers/service_breakdown.py` | — |
+| `GET /api/budget-forecast` | `routers/budget_forecast.py` | `test_budget_forecast.py` |
+| `GET /api/env-breakdown` | `routers/env_breakdown.py` | `test_env_breakdown.py` |
+| `GET /api/tag-compliance` | `routers/tag_compliance.py` | `test_tag_compliance.py` |
+| `GET /api/anomaly-timeline` | `routers/anomaly_timeline.py` | `test_anomaly_timeline.py` |
+| `GET /api/cloud-config`, `PUT` | `routers/cloud_config.py` | `test_api_cloud_config.py` |
+| `GET /api/cloud-config/status` | `routers/cloud_config.py` | `test_api_cloud_config.py` |
+| `GET /api/teams/{team}` | `routers/team_detail.py` | `test_api_team_detail.py` |
+| `GET /health` | `main.py` | — |
 
 ---
 
-## 17. Phase 11 — DuckDB → PostgreSQL 마이그레이션
+## 16. 미래 Phase 계획
 
-DuckDB 파일 기반 DB를 PostgreSQL로 전면 전환. 멀티 프로세스 동시 접근, 트랜잭션 안정성, 웹 CRUD 지원이 목적.
+> 아래 Phase는 구현 예정이다. 각 Phase는 독립적으로 완성 가능하며, 이전 Phase 위에 증분 확장된다.
+> 구현 시 항상 API 라우터 → 프론트엔드 페이지 → pytest 테스트 순서로 진행한다.
+> 매 Phase 완료 후: `uv run pytest tests/ -q` 전체 통과 확인 → CLAUDE.md 섹션 14에 히스토리 추가 → README.md Phase 표 업데이트.
 
-### 11.1 PostgreSQL 접속 정보
+### Phase 41 — Service Detail 드릴다운
 
-```
-host=localhost, port=5432, user=finops_app, password=finops_secret_2026, dbname=finops
-```
+**목표:** 서비스명 클릭 시 해당 서비스의 상세 분석 페이지로 이동
 
-`config/settings.yaml`에 `postgres` 섹션 추가:
-```yaml
-postgres:
-  host: "localhost"
-  port: 5432
-  dbname: "finops"
-  user: "finops_app"
-  password: "finops_secret_2026"
-```
+**API: `GET /api/services/{service_name}?months=6`**
+- 404 반환 (서비스 미존재 시)
+- `monthly_trend`: 최근 N개월 서비스별 비용 + 리소스 수
+- `by_team`: 당월 팀별 비용 + pct (Top 10)
+- `by_provider`: 당월 provider별 비용 + pct
+- `by_env`: 당월 환경별 비용 + pct
+- `top_resources`: 당월 리소스별 비용 Top-10
+- `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, team_count
 
-### 11.2 마이그레이션 범위 (28+ 파일)
+**파일:**
+- `api/routers/service_detail.py` — APIRouter, prefix `/api/services`
+- `api/main.py` — `service_detail` 라우터 등록
+- `api/routers/__init__.py` — `service_detail` 추가
+- `web-app/app/(dashboard)/services/[service]/page.tsx` — Server Component
+  - ← Services 뒤로 링크
+  - KPI 카드 4개 (당월 비용, MoM%, 리소스 수, 팀 수)
+  - 6개월 trend sparkline 바 차트
+  - 팀별 TrendBar + Provider별 TrendBar
+  - Top Resources 표 (resource_id → `/resources/{id}` 링크)
+- `web-app/app/(dashboard)/services/page.tsx` — 서비스명에 `/services/{service}` 링크 추가
+- `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
 
-| 영역 | 변경 내용 |
-|---|---|
-| `dagster_project/resources/duckdb_io.py` | `import duckdb` → `import psycopg2`, `get_connection()` → psycopg2 커넥션 |
-| `dagster_project/resources/settings_store.py` | psycopg2, `ON CONFLICT DO NOTHING`, `db_path` 필드 제거 |
-| `dagster_project/resources/budget_store.py` | psycopg2 |
-| `dagster_project/assets/*.py` | `%s` 파라미터, `to_char()`, `DOUBLE PRECISION`, `DROP VIEW IF EXISTS` |
-| `api/deps.py` | psycopg2 `db_read()`/`db_write()` |
-| `api/routers/*.py` | cursor 패턴, `%s` 파라미터, `::TEXT` |
-| `scripts/dashboard.py` | psycopg2, `pg_tables` |
-| `scripts/streamlit_app.py` | psycopg2, `_PG_DSN`, `to_char()` |
-| `scripts/run_phase2.py` | psycopg2 |
-| `sql/marts/*.sql` | `DOUBLE PRECISION`, `INTERVAL '30 days'` |
-| `tests/*.py` | 실제 PostgreSQL, unique prefix, cleanup |
-
-### 11.3 SQL 구문 차이점 (DuckDB → PostgreSQL)
-
-| DuckDB | PostgreSQL |
-|---|---|
-| `?` | `%s` |
-| `DOUBLE` | `DOUBLE PRECISION` |
-| `::VARCHAR` | `::TEXT` |
-| `strftime(col, '%Y-%m')` | `to_char(col, 'YYYY-MM')` |
-| `INTERVAL 30 DAY` | `INTERVAL '30 days'` |
-| `CREATE OR REPLACE VIEW` | `DROP VIEW IF EXISTS` + `CREATE VIEW` |
-| `CREATE OR REPLACE TABLE AS SELECT` | `DELETE FROM` + `INSERT INTO ... SELECT` |
-| `ROUND(double, 2)` | `ROUND(CAST(col AS NUMERIC), 2)` |
-| `CAST(expr AS type)` (컬럼명 자동 유지) | `CAST(expr AS type) AS alias` (명시적 alias 필수) |
-
-### 11.4 테스트 격리 전략
-
-DuckDB in-memory 격리에서 공유 PostgreSQL로 전환:
-- 테스트 데이터에 `test_` / `inttest_` 접두사 사용
-- fixture에서 `DELETE WHERE resource_id LIKE 'test_%'` cleanup
-- `budget_store` 테스트는 unique team/env명 사용 + cleanup helper
+**검증:** `601 + ~10 = ~611 tests pass`
 
 ---
 
-## 18. Phase 11.1 — Settings 풀 CRUD + 대시보드 UX 개선
+### Phase 42 — Environment Detail 드릴다운
 
-### 18.1 Settings 풀 CRUD
+**목표:** 환경명 클릭 시 해당 환경의 상세 분석 페이지로 이동
 
-PostgreSQL `platform_settings`를 웹 UI에서 완전히 관리 가능하도록 확장.
+**API: `GET /api/environments/{env}?months=6`**
+- 404 반환 (환경 미존재 시)
+- `monthly_trend`: 최근 N개월 환경별 비용
+- `by_team`: 당월 팀별 비용 + pct
+- `by_provider`: 당월 provider별 비용 + pct
+- `by_service`: 당월 서비스별 비용 Top-10 + pct
+- `top_resources`: 당월 리소스별 비용 Top-10
+- `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, team_count
+
+**파일:**
+- `api/routers/env_detail.py` — APIRouter, prefix `/api/environments`
+- `web-app/app/(dashboard)/environments/[env]/page.tsx` — Server Component
+  - 구조: `/teams/[team]/page.tsx`와 동일한 레이아웃 패턴
+- `web-app/app/(dashboard)/env-breakdown/page.tsx` — 환경명에 링크 추가
+- `tests/test_api_env_detail.py` (10개)
+
+**검증:** `~611 + ~10 = ~621 tests pass`
+
+---
+
+### Phase 43 — 전역 검색 (`/search` + `/api/search`)
+
+**목표:** 리소스 ID, 팀명, 서비스명으로 통합 검색
+
+**API: `GET /api/search?q=<query>&limit=20`**
+- `resources`: resource_id/resource_name 매칭 (cost_30d 포함)
+- `teams`: team명 매칭 (curr_month_cost 포함)
+- `services`: service_name 매칭 (cost_30d 포함)
+- 각 카테고리 최대 5건, 전체 최대 15건
+
+**파일:**
+- `api/routers/search.py` — `GET /api/search`
+  - PostgreSQL `ILIKE %s` 패턴 매칭
+  - `fact_daily_cost` + `dim_resource_inventory` JOIN
+- `web-app/app/(dashboard)/search/page.tsx` — Server Component
+  - URL 파라미터 `?q=` 로 쿼리 수신
+  - 리소스/팀/서비스 섹션별 결과 표시
+  - 결과 항목 클릭 → 해당 드릴다운 페이지 이동
+- `web-app/app/(dashboard)/Sidebar.tsx` — 검색 입력창 추가 (sidebar 상단, Enter → `/search?q=`)
+- `tests/test_api_search.py` (8개) — shape/empty/case-insensitive/limit 검증
+
+**구현 주의:**
+- SQL 인젝션 방지: `%{query}%` 는 반드시 파라미터 바인딩으로 (`cur.execute("... ILIKE %s", [f"%{q}%"])`)
+- 빈 쿼리(`q=""`)는 빈 결과 반환 (전체 목록 금지)
+
+---
+
+### Phase 44 — 알림 규칙 CRUD (`/alert-rules` + `/api/alert-rules`)
+
+**목표:** 팀별·리소스별 커스텀 알림 임계값을 웹 UI에서 관리
+
+**DB 테이블: `dim_alert_rules`**
+```sql
+CREATE TABLE IF NOT EXISTS dim_alert_rules (
+    id          BIGSERIAL PRIMARY KEY,
+    rule_name   VARCHAR NOT NULL,
+    team        VARCHAR,           -- NULL = 전체 팀
+    resource_id VARCHAR,           -- NULL = 전체 리소스
+    metric      VARCHAR NOT NULL,  -- 'cost_spike', 'anomaly_count', 'budget_pct'
+    threshold   DOUBLE PRECISION NOT NULL,
+    severity    VARCHAR NOT NULL DEFAULT 'warning',  -- 'warning' | 'critical'
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**API: `/api/alert-rules`**
+- `GET /api/alert-rules` — 전체 규칙 목록 (team/enabled 필터)
+- `POST /api/alert-rules` — 신규 규칙 (201, 규칙명 중복 409)
+- `PUT /api/alert-rules/{id}` — 규칙 수정
+- `DELETE /api/alert-rules/{id}` — 규칙 삭제 (204)
+
+**파일:**
+- `dagster_project/db_schema.py` — `dim_alert_rules` DDL 추가
+- `api/routers/alert_rules.py` — 풀 CRUD
+- `web-app/app/(dashboard)/alert-rules/AlertRulesClient.tsx` — Client Component
+  - 규칙 표: rule_name / team / metric / threshold / severity / enabled / Edit+Delete
+  - "Add Rule" 인라인 폼
+  - enabled 토글 (PUT으로 즉시 반영)
+- `web-app/app/(dashboard)/alert-rules/page.tsx` — Server Component 래퍼
+- `Sidebar.tsx` — "Alert Rules" 항목 추가 (Alerts 근처)
+- `tests/test_api_alert_rules.py` (10개) — CRUD 왕복, 409, 204 검증
+
+---
+
+### Phase 45 — 비용 이상치 Root Cause 분석 (`/api/anomaly-root-cause`)
+
+**목표:** 특정 이상치 이벤트의 원인 추정 자동화
+
+**API: `GET /api/anomaly-root-cause?resource_id=X&charge_date=YYYY-MM-DD`**
+- 해당 resource_id의 당일 vs 직전 7일 평균 비용 비교
+- 같은 서비스의 다른 리소스들 당일 비용 (peer comparison)
+- 같은 팀의 당일 전체 비용 추이
+- 가능한 원인 힌트: `cost_spike` / `new_resource` / `peer_spike` / `unknown`
+- `confidence`: 0.0~1.0 신뢰도 점수
+
+**파일:**
+- `api/routers/anomaly_root_cause.py`
+- `web-app/app/(dashboard)/anomalies/page.tsx` — 이상치 행 클릭 시 Root Cause 패널 인라인 표시
+- `tests/test_api_anomaly_root_cause.py` (8개)
+
+---
+
+### Phase 46 — 비용 예측 정확도 대시보드 (`/forecast-accuracy`)
+
+**목표:** Prophet 예측 vs 실제 비용 정확도를 월별로 추적
+
+**Dagster Asset: `forecast_accuracy`**
+- `dim_prophet_forecast`와 `fact_daily_cost` JOIN
+- 월별 (team, service) 단위 MAE, RMSE, MAPE 계산
+- `dim_forecast_accuracy` 테이블에 DELETE+INSERT 저장
+
+**API: `GET /api/forecast-accuracy?months=6&team=X`**
+- 월별 정확도 시계열
+- 팀별 정확도 순위
+- 전체 summary (avg_mape, best_team, worst_team)
+
+**파일:**
+- `dagster_project/assets/forecast_accuracy.py`
+- `dagster_project/db_schema.py` — `dim_forecast_accuracy` DDL
+- `api/routers/forecast_accuracy.py`
+- `web-app/app/(dashboard)/forecast-accuracy/page.tsx` — Server Component
+  - MAPE 컬러 코딩 (< 10% healthy, 10-25% warning, > 25% critical)
+- `tests/test_forecast_accuracy.py` (8개)
+
+---
+
+### Phase 47 — 멀티 테넌트 권한 관리 기반 (읽기 전용)
+
+**목표:** 팀별 데이터 가시성 제어 기반 마련 (인증 없이 팀 필터링만)
+
+**DB 테이블: `dim_team_access`**
+```sql
+CREATE TABLE IF NOT EXISTS dim_team_access (
+    viewer_team VARCHAR NOT NULL,
+    target_team VARCHAR NOT NULL,
+    PRIMARY KEY (viewer_team, target_team)
+);
+```
 
 **API 변경:**
-- `api/models/settings.py` — `SettingCreateRequest` 추가 (key/value/value_type/description, Pydantic 검증)
-- `api/routers/settings.py` — POST (201, 409 on conflict) + DELETE (204, 404 on missing) 추가
-- `dagster_project/resources/settings_store.py` — `delete_setting()` 메서드 추가, `db_path` 필드 제거
+- `GET /api/overview?as_team=platform` — `platform` 팀 관점의 데이터만 반환
+- 헤더 `X-As-Team` 지원 (미래 인증 레이어 연동 준비)
 
-**프론트엔드 변경:**
-- `web-app/lib/api.ts` — `createSetting()`, `deleteSetting()` 메서드 추가
-- `web-app/app/(dashboard)/settings/SettingsClient.tsx` — 풀 CRUD UI:
-  - "Add Setting" 버튼 + 폼 (key/value/type/description)
-  - 인라인 편집 (기존)
-  - 삭제 확인 (Trash 아이콘 → Check/X 확인)
-  - Type 컬럼 추가 (float/int/str/bool 표시)
+**파일:**
+- `dagster_project/db_schema.py` — `dim_team_access` DDL
+- `api/routers/team_access.py` — CRUD
+- `web-app/app/(dashboard)/settings/page.tsx` — Team Access 섹션 추가
+- `tests/test_team_access.py` (8개)
 
-**Dagster 연동:**
-- Dagster asset은 이미 `settings_store.get_float/get_int/get_str()` 패턴으로 PostgreSQL에서 런타임 설정을 읽는다
-- 웹에서 값을 변경하면 다음 asset 실행 시 즉시 반영 (Dagster 재시작 불필요)
-- `ensure_table()`은 `ON CONFLICT DO NOTHING`으로 기본값만 seed — 웹에서 변경한 값은 보존
+---
 
-### 18.2 테이블 헤더 간격 정렬
+### Phase 48 — 대시보드 내보내기 (PDF/PNG 스크린샷)
 
-모든 대시보드 테이블(8개 파일)의 `<th>` 수평 패딩을 `<td>`와 일치시켜 가독성 개선:
+**목표:** 주요 페이지를 PDF/PNG로 내보내는 기능
+
+**방식:** Playwright headless browser 기반 스크린샷
+- `POST /api/export/screenshot?page=/overview` — 해당 URL 스크린샷 → PNG bytes 반환
+- Content-Disposition: attachment; filename="overview-2026-04.png"
+
+**파일:**
+- `api/routers/export_screenshot.py` — Playwright async API 사용
+- `web-app/app/(dashboard)/layout.tsx` — "Export Page" 버튼 추가 (각 페이지 공통)
+- `pyproject.toml` — `playwright>=1.40` 의존성 추가
+
+**구현 주의:**
+- Playwright는 `uv run playwright install chromium` 별도 설치 필요
+- `@app.on_event("startup")`에서 browser 인스턴스 초기화
+- 스크린샷 타임아웃 30초
+
+---
+
+### Phase 49 — 정기 이메일 리포트 (월별 Chargeback 이메일)
+
+**목표:** 매월 초 팀별 비용 요약을 자동 이메일 발송
+
+**Dagster Schedule: `monthly_email_report_schedule`**
+- 매월 3일 09:00 UTC 실행
+- `EmailSink`로 팀별 Chargeback + 이상치 요약 발송
+- 발송 기록을 `dim_email_report_log`에 저장
+
+**파일:**
+- `dagster_project/assets/email_report.py` — `email_report` asset
+- `dagster_project/db_schema.py` — `dim_email_report_log` DDL
+- `dagster_project/schedules/monthly.py` — `monthly_email_report_schedule` 추가
+- `tests/test_email_report.py` (6개) — 모킹 기반 (SMTP 실제 발송 없이)
+
+---
+
+### Phase 50 — 실제 클라우드 API 연동 기반
+
+**목표:** 가상 데이터 생성기 대신 실제 클라우드 빌링 API 연동 옵션 제공
+
+**AWS 연동 (`cloud.aws.enabled = true` 시):**
+- `boto3` 기반 Cost Explorer API (`ce.get_cost_and_usage`)
+- S3 CUR 파일 다운로드 옵션
+- `AwsCurRealGenerator` — `CostSource` Protocol 구현체
+
+**GCP 연동 (`cloud.gcp.enabled = true` 시):**
+- `google-cloud-bigquery` 기반 Billing Export 쿼리
+- `GcpBillingRealGenerator` — `CostSource` Protocol 구현체
+
+**Azure 연동 (`cloud.azure.enabled = true` 시):**
+- `azure-mgmt-costmanagement` 기반 Cost Management API
+- `AzureCostRealGenerator` — `CostSource` Protocol 구현체
+
+**파일:**
+- `dagster_project/generators/aws_cur_real_generator.py`
+- `dagster_project/generators/gcp_billing_real_generator.py`
+- `dagster_project/generators/azure_cost_real_generator.py`
+- `dagster_project/assets/raw_cur.py` — `cloud.aws.enabled` 설정에 따라 실제/가상 Generator 선택
+- `pyproject.toml` — `boto3`, `google-cloud-bigquery`, `azure-mgmt-costmanagement` 선택적 의존성
+
+**구현 주의:**
+- 실제 Generator는 `try/except ImportError`로 선택적 임포트
+- 가상 Generator는 항상 폴백으로 유지
+- Cloud Config UI에서 키 설정 후 Dagster asset 재실행으로 연동
+
+---
+
+## 17. 개발 워크플로우 (Phase 진행 방법)
+
+각 Phase 구현 시 반드시 아래 순서를 따른다:
 
 ```
-첫 번째 컬럼 th: padding "0 8px 12px 0"      (td: "10px 0")
-중간 컬럼 th:    padding "0 8px 12px 8px"     (td: "10px 8px")
-마지막 컬럼 th:  padding "0 0 12px 8px"       (td: "10px 0 10px 8px")
+1. API 라우터 작성 → api/routers/<domain>.py
+   - APIRouter(prefix="/api/...", tags=[...])
+   - PostgreSQL %s 파라미터 바인딩, f() 헬퍼로 float 변환
+   - 404/409/204 HTTP 상태 코드 정확히 사용
+
+2. api/main.py에 라우터 등록
+   - import 추가
+   - app.include_router() 추가
+
+3. api/routers/__init__.py에 추가
+
+4. 프론트엔드 페이지 작성
+   - Server Component 기본, 인터랙션 있으면 Client Component 분리
+   - export const dynamic = "force-dynamic" (SSR 페이지)
+   - PageHeader / Card / CardHeader / MetricCard / SeverityBadge 컴포넌트 사용
+   - CSS 토큰: var(--text-primary), var(--text-secondary), var(--text-tertiary)
+   - 테이블 헤더 패딩: 첫 컬럼 "0 8px 12px 0", 중간 "0 8px 12px 8px", 마지막 "0 0 12px 8px"
+   - 금액: formatCurrency() 함수 사용
+
+5. Sidebar.tsx에 NAV 항목 추가
+
+6. lib/types.ts에 타입 추가 (필요시)
+
+7. lib/api.ts에 API 메서드 추가 (필요시)
+
+8. pytest 테스트 작성 → tests/test_api_<domain>.py
+   - @pytest.fixture(scope="module") def client() → TestClient(app)
+   - 200/404/409/204 상태 코드 검증
+   - 응답 shape 검증 (필수 필드 존재 여부)
+   - CRUD 왕복 테스트 (create → read → update → delete)
+   - 테스트 데이터 cleanup (unique prefix + DELETE)
+
+9. 검증
+   cd web-app && npx next build    # TypeScript 에러 없어야 함
+   uv run pytest tests/ -q         # 전체 통과
+
+10. CLAUDE.md 섹션 14에 Phase 히스토리 추가
+    - Phase N — 제목
+    - 구현 내용 bullet points
+    - **XXX tests pass** ✅
+
+11. README.md Phase 표에 행 추가
 ```
 
-### 18.3 Badge/Pill 컬럼 가운데 정렬
+### 공통 구현 패턴 레퍼런스
 
-테이블에서 `SeverityBadge`, `SourceTag` 등 badge/pill 형태 요소가 들어가는 컬럼은 `<th>`와 `<td>` 모두 `textAlign: "center"` 적용:
+**API 라우터 기본 구조:**
+```python
+"""GET /api/<domain> — 설명."""
+from __future__ import annotations
+from typing import Any
+from fastapi import APIRouter, Query
+from ..deps import db_read, f
 
-- **Env** — overview, anomalies, budget(status+manager), recommendations, chargeback
-- **Severity** — anomalies, recommendations
-- **Status** — budget status
-- **Source** — forecast (SourceTag)
+router = APIRouter(prefix="/api/<domain>", tags=["<domain>"])
 
-### 18.4 variance.py ROUND 별칭 수정
+@router.get("")
+def get_data(
+    billing_month: str | None = Query(None),
+) -> dict[str, Any]:
+    with db_read() as conn:
+        with conn.cursor() as cur:
+            # latest month 자동 감지
+            if billing_month:
+                month = billing_month
+            else:
+                cur.execute("SELECT to_char(MAX(charge_date),'YYYY-MM') FROM fact_daily_cost")
+                row = cur.fetchone()
+                month = row[0] if row and row[0] else "2024-01"
+            # 쿼리
+            cur.execute("SELECT ... FROM ... WHERE ... = %s", (month,))
+            rows = cur.fetchall()
+    return {"billing_month": month, "items": [...]}
+```
 
-PostgreSQL에서 `ROUND(CAST(variance_pct AS NUMERIC), 2)` 사용 시 별칭이 없으면 컬럼명이 `round`으로 반환되어 `alert_dispatch`에서 `KeyError: 'variance_pct'` 발생.
-→ `AS variance_pct` 명시적 별칭 추가, 다른 `CAST()` 컬럼에도 동일 적용.
+**드릴다운 페이지 404 패턴:**
+```python
+cur.execute("SELECT COUNT(*) FROM fact_daily_cost WHERE <entity> = %s", (name,))
+row = cur.fetchone()
+if not row or row[0] == 0:
+    raise HTTPException(status_code=404, detail=f"<Entity> '{name}' not found")
+```
 
-### 18.5 검증
+**Next.js 동적 라우트 페이지 기본 구조:**
+```typescript
+export const dynamic = "force-dynamic";
 
-```bash
-# Settings CRUD
-curl -X POST http://localhost:8000/api/settings \
-  -H 'Content-Type: application/json' \
-  -d '{"key":"custom.threshold","value":"2.5","value_type":"float","description":"Custom threshold"}'
-curl -X PUT http://localhost:8000/api/settings/custom.threshold \
-  -H 'Content-Type: application/json' -d '{"value":"3.0"}'
-curl -X DELETE http://localhost:8000/api/settings/custom.threshold
+export default async function DetailPage({ params }: { params: { id: string } }) {
+  const name = decodeURIComponent(params.id);
+  let data: DetailData;
+  try {
+    const res = await fetch(`${API_BASE}/api/<domain>/${encodeURIComponent(name)}`, { cache: "no-store" });
+    if (!res.ok) {
+      if (res.status === 404) throw new Error(`"${name}" not found`);
+      throw new Error(`API ${res.status}`);
+    }
+    data = await res.json();
+  } catch (e) {
+    return <ErrorState message={String(e)} />;
+  }
+  return (
+    <div style={{ maxWidth: "1200px" }}>
+      <div style={{ marginBottom: "8px" }}>
+        <Link href="/<parent>" style={{ fontSize: "12px", color: "var(--text-tertiary)", textDecoration: "none" }}>
+          ← <Parent>
+        </Link>
+      </div>
+      <PageHeader title={name} description="..." />
+      {/* KPI 카드 */}
+      {/* 콘텐츠 */}
+    </div>
+  );
+}
+```
 
-# 288 tests, all pass
-uv run pytest tests/ -q
+**테스트 기본 구조:**
+```python
+"""Tests for /api/<domain> endpoint."""
+from __future__ import annotations
+import pytest
+from fastapi.testclient import TestClient
+from api.main import app
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    return TestClient(app)
+
+def test_<domain>_returns_200(client: TestClient) -> None:
+    r = client.get("/api/<domain>")
+    assert r.status_code == 200
+
+def test_<domain>_shape(client: TestClient) -> None:
+    body = client.get("/api/<domain>").json()
+    assert "billing_month" in body
+    assert "items" in body
+    assert isinstance(body["items"], list)
+```
 ```

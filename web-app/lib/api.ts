@@ -1,8 +1,9 @@
 import type {
+  AlertHistoryData, AlertHistoryItem,
   AnomaliesData, BudgetData, BudgetEntry, BudgetEntryList, BurnRateData,
-  ChargebackData, DataQualityData, ExplorerData, FiltersData, ForecastData,
+  ChargebackData, CostHeatmapData, DataQualityData, ExplorerData, FiltersData, ForecastData,
   OpsHealthData, OpsRunsData, OverviewData, RecommendationsData,
-  SettingItem, SettingsData,
+  SavingsData, SettingItem, SettingsData,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -102,4 +103,15 @@ export const api = {
 
   burnRate: (billing_month?: string) =>
     get<BurnRateData>("/api/burn-rate", billing_month ? { billing_month } : undefined),
+
+  alerts: (p?: { severity?: string; acknowledged?: string; alert_type?: string; limit?: string }) =>
+    getFresh<AlertHistoryData>("/api/alerts", p),
+  acknowledgeAlert: (id: number, acknowledged_by = "dashboard") =>
+    send<AlertHistoryItem>("POST", `/api/alerts/${id}/acknowledge`, { acknowledged_by }),
+
+  savings: (p?: { billing_month?: string; team?: string; status?: string }) =>
+    get<SavingsData>("/api/savings", p),
+
+  costHeatmap: (p?: { billing_month?: string; provider?: string; team?: string }) =>
+    get<CostHeatmapData>("/api/cost-heatmap", p),
 };

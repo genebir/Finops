@@ -7,6 +7,7 @@ from . import (
     chargeback,
     cost_allocation,
     cost_explorer,
+    cost_trend,
     data_quality,
     filters,
     forecast,
@@ -16,6 +17,7 @@ from . import (
     settings,
     showback,
     tag_policy,
+    team_detail,
 )
 
 __all__ = [
@@ -25,6 +27,7 @@ __all__ = [
     "chargeback",
     "cost_allocation",
     "cost_explorer",
+    "cost_trend",
     "data_quality",
     "filters",
     "forecast",
@@ -34,4 +37,5 @@ __all__ = [
     "settings",
     "showback",
     "tag_policy",
+    "team_detail",
 ]

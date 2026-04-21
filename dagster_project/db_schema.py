@@ -158,6 +158,75 @@ BASE_TABLE_DDL: dict[str, str] = {
             severity             VARCHAR        NOT NULL
         )
     """,
+    # 예산 예측 (Phase 29)
+    "dim_budget_forecast": """
+        CREATE TABLE IF NOT EXISTS dim_budget_forecast (
+            billing_month       VARCHAR          NOT NULL,
+            team                VARCHAR          NOT NULL,
+            env                 VARCHAR          NOT NULL,
+            days_elapsed        INTEGER          NOT NULL,
+            days_in_month       INTEGER          NOT NULL,
+            mtd_cost            DOUBLE PRECISION NOT NULL,
+            projected_eom       DOUBLE PRECISION NOT NULL,
+            lower_bound         DOUBLE PRECISION NOT NULL,
+            upper_bound         DOUBLE PRECISION NOT NULL,
+            budget_amount       DOUBLE PRECISION,
+            projected_pct       DOUBLE PRECISION,
+            risk_level          VARCHAR          NOT NULL DEFAULT 'normal',
+            computed_at         TIMESTAMPTZ      NOT NULL
+        )
+    """,
+    # 절감 실적 추적 (Phase 23)
+    "dim_savings_realized": """
+        CREATE TABLE IF NOT EXISTS dim_savings_realized (
+            id                BIGSERIAL        PRIMARY KEY,
+            billing_month     VARCHAR          NOT NULL,
+            resource_id       VARCHAR          NOT NULL,
+            team              VARCHAR          NOT NULL,
+            product           VARCHAR          NOT NULL,
+            env               VARCHAR          NOT NULL,
+            provider          VARCHAR          NOT NULL,
+            recommendation_type VARCHAR        NOT NULL,
+            estimated_savings DOUBLE PRECISION NOT NULL,
+            realized_savings  DOUBLE PRECISION,
+            prev_month_cost   DOUBLE PRECISION,
+            curr_month_cost   DOUBLE PRECISION,
+            status            VARCHAR          NOT NULL DEFAULT 'pending',
+            computed_at       TIMESTAMPTZ      NOT NULL
+        )
+    """,
+    # 알림 히스토리 (Phase 20)
+    "dim_alert_history": """
+        CREATE TABLE IF NOT EXISTS dim_alert_history (
+            id                BIGSERIAL        PRIMARY KEY,
+            alert_type        VARCHAR          NOT NULL,
+            severity          VARCHAR          NOT NULL,
+            resource_id       VARCHAR          NOT NULL,
+            cost_unit_key     VARCHAR          NOT NULL,
+            message           TEXT             NOT NULL,
+            actual_cost       DOUBLE PRECISION,
+            reference_cost    DOUBLE PRECISION,
+            deviation_pct     DOUBLE PRECISION,
+            triggered_at      TIMESTAMPTZ      NOT NULL,
+            acknowledged      BOOLEAN          NOT NULL DEFAULT FALSE,
+            acknowledged_at   TIMESTAMPTZ,
+            acknowledged_by   VARCHAR
+        )
+    """,
+    # 비용 트렌드 (Phase 19)
+    "dim_cost_trend": """
+        CREATE TABLE IF NOT EXISTS dim_cost_trend (
+            billing_month   VARCHAR          NOT NULL,
+            provider        VARCHAR          NOT NULL,
+            team            VARCHAR          NOT NULL,
+            env             VARCHAR          NOT NULL,
+            service_name    VARCHAR          NOT NULL DEFAULT '',
+            total_cost      DOUBLE PRECISION NOT NULL,
+            resource_count  BIGINT           NOT NULL,
+            anomaly_count   INTEGER          NOT NULL DEFAULT 0,
+            computed_at     TIMESTAMPTZ      NOT NULL
+        )
+    """,
     # Showback 리포트 (Phase 18)
     "dim_showback_report": """
         CREATE TABLE IF NOT EXISTS dim_showback_report (
@@ -274,6 +343,22 @@ BASE_TABLE_DDL: dict[str, str] = {
             null_ratio      DOUBLE PRECISION,
             passed          BOOLEAN          NOT NULL,
             detail          TEXT
+        )
+    """,
+    # 태그 준수율 점수 (Phase 31)
+    "dim_tag_compliance": """
+        CREATE TABLE IF NOT EXISTS dim_tag_compliance (
+            billing_month       VARCHAR          NOT NULL,
+            team                VARCHAR          NOT NULL,
+            provider            VARCHAR          NOT NULL,
+            total_resources     BIGINT           NOT NULL,
+            tagged_resources    BIGINT           NOT NULL,
+            violation_count     INTEGER          NOT NULL DEFAULT 0,
+            tag_completeness    DOUBLE PRECISION NOT NULL,
+            compliance_score    DOUBLE PRECISION NOT NULL,
+            rank                INTEGER,
+            computed_at         TIMESTAMPTZ      NOT NULL,
+            PRIMARY KEY (billing_month, team, provider)
         )
     """,
     # 운영 로그(Phase 12)
