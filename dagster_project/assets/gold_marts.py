@@ -16,7 +16,12 @@ _SQL_DIR = Path(__file__).parent.parent.parent / "sql" / "marts"
 _cfg = load_config()
 
 _INSERT_FACT_SQL = """
-INSERT INTO fact_daily_cost
+INSERT INTO fact_daily_cost (
+    provider, charge_date, resource_id, resource_name, resource_type,
+    service_name, service_category, region_id,
+    team, product, env, cost_unit_key,
+    effective_cost, billed_cost, list_cost, record_count
+)
 SELECT
     '{provider}' AS provider,
     CAST(strftime(ChargePeriodStart, '%Y-%m-%d') AS DATE) AS charge_date,

@@ -7,10 +7,15 @@ team="*" 또는 env="*" 와일드카드로 범용 예산을 설정할 수 있다
 
 from __future__ import annotations
 
+import random
+import time
 from pathlib import Path
 
 import duckdb
 from dagster import ConfigurableResource
+
+_MAX_RETRIES = 12
+_BASE_DELAY = 0.5
 
 from ..config import BudgetEntryConfig, load_config
 
@@ -39,7 +44,15 @@ class BudgetStoreResource(ConfigurableResource):  # type: ignore[type-arg]
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        return duckdb.connect(self.db_path)
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                return duckdb.connect(self.db_path)
+            except duckdb.IOException as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES - 1:
+                    time.sleep(_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
+        raise last_exc  # type: ignore[misc]
 
     def ensure_table(self) -> None:
         """테이블이 없으면 생성하고 settings.yaml의 기본값을 seed한다."""

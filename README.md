@@ -54,7 +54,7 @@ scripts/streamlit_app.py (Streamlit 웹 대시보드)
 | Config | PyYAML + Pydantic | 정적 설정 로딩 |
 | Cost Forecast | Infracost CLI | Terraform 기반 비용 예측 |
 | ML Forecast | Prophet ≥1.1 | 시계열 기반 비용 예측 |
-| ML Anomaly | scikit-learn ≥1.4 | IsolationForest 이상치 탐지 |
+| ML Anomaly | scikit-learn ≥1.4, statsmodels ≥0.14 | IsolationForest / ARIMA 이상치 탐지 |
 | Alerting | slack-sdk ≥3.0 / smtplib | Slack Webhook + 이메일 알림 |
 | CLI Dashboard | Rich ≥13.0 | 터미널 대시보드 |
 | Web Dashboard | Streamlit ≥1.35 + Plotly ≥5.0 | 웹 대시보드 |
@@ -112,8 +112,8 @@ uv run mypy dagster_project
 -- 이상치 탐지 임계값 조정
 UPDATE platform_settings SET value = '3.0' WHERE key = 'anomaly.zscore.warning';
 
--- 활성 탐지기 변경 (zscore, isolation_forest, moving_average)
-UPDATE platform_settings SET value = 'zscore,moving_average' WHERE key = 'anomaly.active_detectors';
+-- 활성 탐지기 변경 (zscore, isolation_forest, moving_average, arima)
+UPDATE platform_settings SET value = 'zscore,moving_average,arima' WHERE key = 'anomaly.active_detectors';
 
 -- 예산 경고 임계값 조정
 UPDATE platform_settings SET value = '70.0' WHERE key = 'budget.alert_threshold_pct';
@@ -158,3 +158,5 @@ finops-platform/
 | Phase 3 | GCP 파이프라인, IsolationForest, Prophet 신뢰구간, Rich 대시보드 | - |
 | Phase 4 | Azure 파이프라인, BudgetStore, Chargeback, Streamlit 대시보드 | 200 / 70.2% |
 | Phase 5 | FX 환율, MovingAverage 탐지기, EmailSink, 통합 테스트 | **272 / 95.7%** |
+| Phase 6 | ARIMA 탐지기, HTTP FX Provider, Prophet CV, Budget CRUD UI | **298 / 94.9%** |
+| Phase 7 | Autoencoder 탐지기, 비용 추천 엔진, Settings UI | **311 / 94.6%** |

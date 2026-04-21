@@ -15,16 +15,159 @@ from pathlib import Path
 import duckdb
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
 _DUCKDB_PATH = os.environ.get("DUCKDB_PATH", "data/marts.duckdb")
 
 st.set_page_config(
     page_title="FinOps Platform",
-    page_icon="💰",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── Design System ──────────────────────────────────────────────────────────────
+
+_FINOPS_TEMPLATE = go.layout.Template(
+    layout=go.Layout(
+        font=dict(family="Inter, sans-serif", size=13, color="#1A1714"),
+        paper_bgcolor="#FAF7F2",
+        plot_bgcolor="#FAF7F2",
+        colorway=[
+            "#7FB77E", "#6B8CAE", "#D97757", "#8B7FB8",
+            "#E8A04A", "#C8553D", "#A89F94", "#5C8A7A",
+        ],
+        xaxis=dict(
+            gridcolor="#E8E2D9", linecolor="#D4CCC0", zeroline=False,
+            tickfont=dict(family="JetBrains Mono, monospace", size=11, color="#6B6560"),
+        ),
+        yaxis=dict(
+            gridcolor="#E8E2D9", linecolor="#D4CCC0", zeroline=False,
+            tickfont=dict(family="JetBrains Mono, monospace", size=11, color="#6B6560"),
+        ),
+        legend=dict(
+            font=dict(family="Inter, sans-serif", size=12, color="#6B6560"),
+            bgcolor="rgba(0,0,0,0)", borderwidth=0,
+        ),
+        margin=dict(l=48, r=24, t=32, b=48),
+        hoverlabel=dict(
+            bgcolor="#1A1714", bordercolor="#1A1714",
+            font=dict(family="Inter, sans-serif", size=12, color="#FAF7F2"),
+        ),
+    )
+)
+pio.templates["finops"] = _FINOPS_TEMPLATE
+pio.templates.default = "finops"
+
+
+def _inject_design_system() -> None:
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+        --bg-warm: #FAF7F2;
+        --bg-warm-subtle: #F2EDE4;
+        --bg-dark: #1A1714;
+        --text-primary: #1A1714;
+        --text-secondary: #6B6560;
+        --text-tertiary: #A89F94;
+        --text-inverse: #FAF7F2;
+        --border: #E8E2D9;
+        --border-strong: #D4CCC0;
+        --status-critical: #C8553D;
+        --status-warning: #E8A04A;
+        --status-healthy: #7FB77E;
+        --status-under: #6B8CAE;
+        --provider-aws: #D97757;
+        --provider-gcp: #6B8CAE;
+        --provider-azure: #8B7FB8;
+        --radius-card: 20px;
+        --radius-button: 12px;
+        --radius-input: 10px;
+        --radius-large: 28px;
+        --shadow-subtle: 0 1px 2px rgba(0,0,0,0.04);
+        --shadow-hover: 0 4px 12px rgba(0,0,0,0.06);
+    }
+
+    html, body, [class*="css"], .stApp {
+        font-family: 'Inter', sans-serif !important;
+        background-color: var(--bg-warm) !important;
+        color: var(--text-primary) !important;
+    }
+    h1, h2 {
+        font-family: 'Instrument Serif', serif !important;
+        font-weight: 400 !important;
+        letter-spacing: -0.02em !important;
+        color: var(--text-primary) !important;
+    }
+    h3, h4, h5, h6 {
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 600 !important;
+        letter-spacing: -0.01em !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'JetBrains Mono', monospace !important;
+        font-variant-numeric: tabular-nums !important;
+    }
+    [data-testid="stMetric"] {
+        background: var(--bg-warm-subtle) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-card) !important;
+        padding: 20px 24px !important;
+        box-shadow: var(--shadow-subtle) !important;
+    }
+    .stButton > button {
+        border-radius: var(--radius-button) !important;
+        border: 1px solid var(--border-strong) !important;
+        background: var(--bg-warm) !important;
+        color: var(--text-primary) !important;
+        font-weight: 500 !important;
+        font-family: 'Inter', sans-serif !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton > button:hover {
+        border-color: var(--text-primary) !important;
+        box-shadow: var(--shadow-hover) !important;
+        transform: translateY(-1px) !important;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 4px !important;
+        border-bottom: 1px solid var(--border) !important;
+        background: transparent !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: var(--radius-button) var(--radius-button) 0 0 !important;
+        padding: 12px 20px !important;
+        font-family: 'Inter', sans-serif !important;
+        font-weight: 500 !important;
+        font-size: 14px !important;
+        color: var(--text-secondary) !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--text-primary) !important;
+        border-bottom: 2px solid var(--provider-aws) !important;
+    }
+    [data-testid="stSidebar"] {
+        background-color: var(--bg-warm-subtle) !important;
+        border-right: 1px solid var(--border) !important;
+    }
+    .stDataFrame {
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-card) !important;
+        overflow: hidden !important;
+    }
+    .stSelectbox > div > div {
+        border-radius: var(--radius-input) !important;
+        border-color: var(--border) !important;
+        background-color: var(--bg-warm) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+_inject_design_system()
 
 
 @st.cache_data(ttl=300)
@@ -82,13 +225,14 @@ st.sidebar.caption(f"Data source: `{_DUCKDB_PATH}`")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_overview, tab_explorer, tab_anomaly, tab_forecast, tab_budget, tab_chargeback = st.tabs([
-    "📊 Overview",
-    "🔍 Cost Explorer",
-    "🚨 Anomalies",
-    "📈 Forecast",
-    "💳 Budget",
-    "📑 Chargeback",
+tab_overview, tab_explorer, tab_anomaly, tab_forecast, tab_budget, tab_chargeback, tab_settings = st.tabs([
+    "Overview",
+    "Cost Explorer",
+    "Anomalies",
+    "Forecast",
+    "Budget",
+    "Chargeback",
+    "Settings",
 ])
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
@@ -250,7 +394,9 @@ with tab_anomaly:
                 color="severity", size="z_score",
                 hover_data=["resource_id", "team", "product", "detector_name"],
                 title="Anomalies (size = |z_score|)",
-                color_discrete_map={"critical": "red", "warning": "orange", "ok": "green"},
+                color_discrete_map={
+                    "critical": "#C8553D", "warning": "#E8A04A", "ok": "#7FB77E"
+                },
             )
             st.plotly_chart(fig, use_container_width=True)
             st.dataframe(filtered, use_container_width=True)
@@ -320,10 +466,10 @@ with tab_forecast:
                 title="Prophet Forecast vs Actual",
                 labels={"forecast": "Forecast (USD)", "actual": "Actual (USD)"},
                 color_discrete_map={
-                    "within_bounds": "green",
-                    "above_upper": "red",
-                    "below_lower": "blue",
-                    "no_actual": "gray",
+                    "within_bounds": "#7FB77E",
+                    "above_upper": "#C8553D",
+                    "below_lower": "#6B8CAE",
+                    "no_actual": "#A89F94",
                 },
             )
             fig2.add_shape(
@@ -364,7 +510,7 @@ with tab_budget:
             orientation="h", color="status",
             title="Budget Utilization by Team/Env",
             labels={"utilization_pct": "Utilization (%)", "y": "Team/Env"},
-            color_discrete_map={"over": "red", "warning": "orange", "ok": "green"},
+            color_discrete_map={"over": "#C8553D", "warning": "#E8A04A", "ok": "#7FB77E"},
         )
         fig.add_vline(x=100, line_color="red", line_dash="dash", annotation_text="100%")
         fig.add_vline(x=80, line_color="orange", line_dash="dash", annotation_text="80%")
@@ -384,6 +530,72 @@ with tab_budget:
         st.dataframe(pd.DataFrame(budget_config), use_container_width=True)
     else:
         st.info("No budget configuration found.")
+
+    st.subheader("Edit Budget")
+    with st.expander("Add / Update Budget Entry"):
+        with st.form("budget_edit_form"):
+            col_team, col_env = st.columns(2)
+            new_team = col_team.text_input("Team (* for all)", value="*")
+            new_env = col_env.text_input("Env (* for all)", value="*")
+            new_amount = st.number_input(
+                "Monthly Budget (USD)", min_value=0.0, value=1000.0, step=100.0
+            )
+            new_month = st.text_input(
+                "Billing Month (YYYY-MM, blank = all months)", value=""
+            )
+            submitted = st.form_submit_button("Save Budget")
+
+        if submitted:
+            if not Path(_DUCKDB_PATH).exists():
+                st.error("DuckDB file not found. Run Dagster assets first.")
+            else:
+                try:
+                    conn = duckdb.connect(_DUCKDB_PATH)
+                    billing_month_val = new_month.strip() if new_month.strip() else None
+                    existing = conn.execute(
+                        "SELECT COUNT(*) FROM dim_budget WHERE team=? AND env=?",
+                        [new_team, new_env],
+                    ).fetchone()
+                    if existing and existing[0] > 0:
+                        conn.execute(
+                            "UPDATE dim_budget SET budget_amount=?, billing_month=?, "
+                            "updated_at=NOW() WHERE team=? AND env=?",
+                            [new_amount, billing_month_val, new_team, new_env],
+                        )
+                        st.success(f"Updated budget for {new_team}/{new_env}: ${new_amount:,.2f}")
+                    else:
+                        conn.execute(
+                            "INSERT INTO dim_budget (team, env, budget_amount, billing_month) "
+                            "VALUES (?, ?, ?, ?)",
+                            [new_team, new_env, new_amount, billing_month_val],
+                        )
+                        st.success(f"Added budget for {new_team}/{new_env}: ${new_amount:,.2f}")
+                    conn.close()
+                    st.cache_data.clear()
+                except Exception as exc:
+                    st.error(f"Failed to save: {exc}")
+
+    with st.expander("Delete Budget Entry"):
+        del_entries = _query("SELECT team, env FROM dim_budget ORDER BY team, env")
+        if del_entries:
+            import pandas as pd
+            del_options = [f"{r['team']}/{r['env']}" for r in del_entries]
+            del_choice = st.selectbox("Select entry to delete", del_options)
+            if st.button("Delete Selected Entry"):
+                del_team, del_env = del_choice.split("/", 1)
+                try:
+                    conn = duckdb.connect(_DUCKDB_PATH)
+                    conn.execute(
+                        "DELETE FROM dim_budget WHERE team=? AND env=?",
+                        [del_team, del_env],
+                    )
+                    conn.close()
+                    st.success(f"Deleted budget entry: {del_choice}")
+                    st.cache_data.clear()
+                except Exception as exc:
+                    st.error(f"Failed to delete: {exc}")
+        else:
+            st.info("No budget entries to delete.")
 
 # ── Tab 6: Chargeback ─────────────────────────────────────────────────────────
 
@@ -423,3 +635,103 @@ with tab_chargeback:
             st.dataframe(df, use_container_width=True)
         else:
             st.info("No chargeback data. Run chargeback asset first.")
+
+# ── Tab 7: Settings ───────────────────────────────────────────────────────────
+
+with tab_settings:
+    st.header("Platform Settings")
+    st.caption("DuckDB `platform_settings` 테이블의 런타임 임계값을 조회·수정합니다.")
+
+    settings_rows = _query(
+        "SELECT key, value, value_type, description, updated_at "
+        "FROM platform_settings ORDER BY key"
+    )
+
+    if not settings_rows:
+        st.info(
+            "platform_settings 테이블이 없습니다. "
+            "Dagster에서 anomaly_detection 또는 다른 asset을 한 번 실행하세요."
+        )
+    else:
+        import pandas as pd
+
+        df_settings = pd.DataFrame(settings_rows)
+
+        # Active detectors 토글 UI
+        st.subheader("Active Detectors")
+        active_row = next(
+            (r for r in settings_rows if r["key"] == "anomaly.active_detectors"), None
+        )
+        if active_row:
+            all_detectors = ["zscore", "isolation_forest", "moving_average", "arima", "autoencoder"]
+            current_active = [d.strip() for d in str(active_row["value"]).split(",")]
+            selected = st.multiselect(
+                "활성 탐지기 선택",
+                options=all_detectors,
+                default=[d for d in current_active if d in all_detectors],
+            )
+            if st.button("탐지기 설정 저장"):
+                new_value = ",".join(selected)
+                if Path(_DUCKDB_PATH).exists():
+                    try:
+                        conn = duckdb.connect(_DUCKDB_PATH)
+                        conn.execute(
+                            "UPDATE platform_settings SET value=? WHERE key='anomaly.active_detectors'",
+                            [new_value],
+                        )
+                        conn.close()
+                        st.success(f"활성 탐지기 업데이트: {new_value}")
+                        st.cache_data.clear()
+                    except Exception as exc:
+                        st.error(f"저장 실패: {exc}")
+                else:
+                    st.error("DuckDB 파일이 없습니다.")
+
+        st.subheader("All Settings")
+        st.dataframe(df_settings, use_container_width=True)
+
+        st.subheader("Edit Setting")
+        with st.expander("값 수정"):
+            setting_keys = [r["key"] for r in settings_rows]
+            selected_key = st.selectbox("설정 키", setting_keys)
+            current_val = next(
+                (r["value"] for r in settings_rows if r["key"] == selected_key), ""
+            )
+            new_val = st.text_input("새 값", value=str(current_val))
+            if st.button("저장"):
+                if Path(_DUCKDB_PATH).exists():
+                    try:
+                        conn = duckdb.connect(_DUCKDB_PATH)
+                        conn.execute(
+                            "UPDATE platform_settings SET value=? WHERE key=?",
+                            [new_val, selected_key],
+                        )
+                        conn.close()
+                        st.success(f"{selected_key} = {new_val} 저장 완료")
+                        st.cache_data.clear()
+                    except Exception as exc:
+                        st.error(f"저장 실패: {exc}")
+                else:
+                    st.error("DuckDB 파일이 없습니다.")
+
+    # Recommendations 탭
+    st.subheader("Cost Recommendations")
+    rec_rows = _query(f"""
+        SELECT resource_id, team, env, provider,
+               recommendation_type, reason, estimated_savings, severity
+        FROM dim_cost_recommendations
+        WHERE billing_month = '{selected_month}'
+        ORDER BY severity DESC, estimated_savings DESC NULLS LAST
+    """ if selected_month else "SELECT 1 WHERE FALSE")
+
+    if rec_rows:
+        import pandas as pd
+        df_rec = pd.DataFrame(rec_rows)
+        critical_cnt = len(df_rec[df_rec["severity"] == "critical"])
+        warning_cnt = len(df_rec[df_rec["severity"] == "warning"])
+        c1, c2 = st.columns(2)
+        c1.metric("Critical Recommendations", critical_cnt)
+        c2.metric("Warning Recommendations", warning_cnt)
+        st.dataframe(df_rec, use_container_width=True)
+    else:
+        st.info("No recommendations. Run cost_recommendations asset first.")

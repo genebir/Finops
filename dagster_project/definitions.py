@@ -12,6 +12,7 @@ from .assets import (
     bronze_iceberg_gcp,
     budget_alerts,
     chargeback,
+    cost_recommendations,
     forecast_variance_prophet,
     fx_rates,
     gold_marts,
@@ -59,6 +60,7 @@ all_assets = load_assets_from_modules(
         budget_alerts,
         chargeback,
         fx_rates,
+        cost_recommendations,
     ]
 )
 

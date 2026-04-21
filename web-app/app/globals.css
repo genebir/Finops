@@ -1,0 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Base palette */
+  --bg-warm: #faf7f2;
+  --bg-warm-subtle: #f2ede4;
+  --bg-dark: #1a1714;
+  --bg-dark-subtle: #26221e;
+
+  /* Text */
+  --text-primary: #1a1714;
+  --text-secondary: #6b6560;
+  --text-tertiary: #a89f94;
+  --text-inverse: #faf7f2;
+
+  /* Border */
+  --border: #e8e2d9;
+  --border-strong: #d4ccc0;
+
+  /* Status */
+  --status-critical: #c8553d;
+  --status-warning: #e8a04a;
+  --status-healthy: #7fb77e;
+  --status-under: #6b8cae;
+
+  /* Provider */
+  --provider-aws: #d97757;
+  --provider-gcp: #6b8cae;
+  --provider-azure: #8b7fb8;
+
+  /* Shape */
+  --radius-input: 10px;
+  --radius-button: 12px;
+  --radius-card: 20px;
+  --radius-large: 28px;
+  --radius-full: 9999px;
+
+  /* Shadow */
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg-warm);
+  color: var(--text-primary);
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-display {
+  font-family: "Montserrat", sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.currency-symbol {
+  font-size: 0.7em;
+  opacity: 0.8;
+}

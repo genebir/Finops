@@ -9,10 +9,15 @@ Dagster UI를 재시작하지 않아도 값을 변경할 수 있다.
 
 from __future__ import annotations
 
+import random
+import time
 from pathlib import Path
 
 import duckdb
 from dagster import ConfigurableResource
+
+_MAX_RETRIES = 12
+_BASE_DELAY = 0.5
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS platform_settings (
@@ -51,6 +56,19 @@ _DEFAULT_SETTINGS: list[tuple[str, str, str, str]] = [
     ("moving_average.multiplier_warning",  "2.0", "float", "이동평균 경고 임계값 배수"),
     ("moving_average.multiplier_critical", "3.0", "float", "이동평균 위험 임계값 배수"),
     ("moving_average.min_window",       "3",    "int",   "이동평균 계산 최소 데이터 포인트 수"),
+    # Phase 6: ARIMA 탐지기 설정
+    ("arima.order_p",                   "1",    "int",   "ARIMA p 차수 (AR)"),
+    ("arima.order_d",                   "1",    "int",   "ARIMA d 차수 (적분)"),
+    ("arima.order_q",                   "1",    "int",   "ARIMA q 차수 (MA)"),
+    ("arima.threshold_warning",         "2.0",  "float", "ARIMA 잔차 경고 임계값 (σ 배수)"),
+    ("arima.threshold_critical",        "3.0",  "float", "ARIMA 잔차 위험 임계값 (σ 배수)"),
+    ("arima.min_samples",               "10",   "int",   "ARIMA 모델 최소 샘플 수"),
+    # Phase 7: Autoencoder 탐지기 설정
+    ("autoencoder.window_size",         "7",    "int",   "Autoencoder 슬라이딩 윈도우 크기"),
+    ("autoencoder.threshold_warning",   "2.0",  "float", "Autoencoder 재구성 오차 경고 임계값 (σ 배수)"),
+    ("autoencoder.threshold_critical",  "3.0",  "float", "Autoencoder 재구성 오차 위험 임계값 (σ 배수)"),
+    ("autoencoder.min_samples",         "14",   "int",   "Autoencoder 최소 샘플 수"),
+    ("autoencoder.max_iter",            "200",  "int",   "Autoencoder MLPRegressor 최대 반복 횟수"),
 ]
 
 
@@ -64,7 +82,15 @@ class SettingsStoreResource(ConfigurableResource):  # type: ignore[type-arg]
 
     def _connect(self) -> duckdb.DuckDBPyConnection:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        return duckdb.connect(self.db_path)
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                return duckdb.connect(self.db_path)
+            except duckdb.IOException as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES - 1:
+                    time.sleep(_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
+        raise last_exc  # type: ignore[misc]
 
     def ensure_table(self) -> None:
         """테이블이 없으면 생성하고 기본값을 seed한다."""

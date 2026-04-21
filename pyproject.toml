@@ -20,6 +20,9 @@ dependencies = [
     "scikit-learn>=1.4",
     "streamlit>=1.35",
     "plotly>=5.0",
+    "statsmodels>=0.14",
+    "fastapi>=0.136.0",
+    "uvicorn[standard]>=0.44.0",
 ]
 
 [project.optional-dependencies]
@@ -53,7 +56,7 @@ warn_return_any = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["prophet", "prophet.*", "yaml"]
+module = ["prophet", "prophet.*", "yaml", "statsmodels", "statsmodels.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

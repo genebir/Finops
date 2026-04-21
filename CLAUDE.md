@@ -18,6 +18,8 @@
 **확장성 원칙:** `CostSource`, `ForecastProvider`, `AnomalyDetector`, `AlertSink`, `FxProvider` 등 **Protocol 기반 추상화**로 새 클라우드·탐지기·알림을 코드 수정 없이 추가할 수 있어야 한다.
 
 **하드코딩 금지 원칙:** 모든 설정은 `config/settings.yaml` (정적 설정), DuckDB `platform_settings` 테이블 (런타임 임계값), 또는 환경변수로 관리한다. 소스 코드에 수치·경로를 직접 쓰지 않는다.
+**디자인 시스템 원칙:** 프론트엔드 작업(Streamlit 대시보드 `scripts/streamlit_app.py`, React 랜딩페이지 `web/`)을 시작하기 전에 **반드시 `docs/design-system.md`를 먼저 읽는다.** 해당 문서는 Streamlit·React 양쪽 구현에 대한 단일 소스 오브 트루스다. 색상(hex), 타이포, border-radius, spacing은 해당 문서의 토큰만 사용하며, Streamlit 기본 테마·Plotly 기본 템플릿·shadcn 기본 스타일을 그대로 쓰지 않는다. 오픈소스 배포 대상 프로젝트이므로 "modern", "clean" 같은 모호한 형용사로 회귀하지 말고 토큰 값 그대로 구현할 것.
+**모니터링 웹 앱 원칙:** 신규 웹 모니터링 UI(`web-app/`, `api/`) 작업 시 **반드시 `docs/monitoring-webapp.md`를 먼저 읽는다.** 해당 문서가 페이지 구조·API 엔드포인트·컴포넌트 규칙의 단일 소스 오브 트루스다. 기존 Streamlit(`scripts/streamlit_app.py`)은 내부 디버깅용으로만 유지하며 새 기능은 모두 `web-app/`에 구현한다.
 
 ---
 
@@ -42,6 +44,7 @@
 | Language | Python 3.14+ | |
 | Package Mgmt | uv | |
 | Lint/Type | ruff + mypy (strict) | |
+| Web Landing | Next.js (≥14) + Tailwind | 오픈소스 랜딩페이지 (web/) |
 
 ---
 
@@ -519,6 +522,12 @@ moving_average.window_days          = 7
 moving_average.multiplier_warning   = 2.0
 moving_average.multiplier_critical  = 3.0
 moving_average.min_window           = 3
+arima.order_p                       = 1
+arima.order_d                       = 1
+arima.order_q                       = 1
+arima.threshold_warning             = 2.0
+arima.threshold_critical            = 3.0
+arima.min_samples                   = 10
 ```
 
 런타임 변경 (Dagster 재시작 불필요):
@@ -665,7 +674,13 @@ module_name = "dagster_project.definitions"
 - **asset 파일에 `from __future__ import annotations` 절대 금지**
 - 소스 코드에 수치·경로 하드코딩 금지 — 항상 `_cfg.*` 또는 `settings_store.get_*()`
 - `except Exception:` 지양 — 구체적 예외 타입 사용
-
+- **프론트엔드 작업 시** `docs/design-system.md`의 디자인 토큰 외 값 사용 금지
+- **Streamlit** (`scripts/streamlit_app.py`): 커스텀 CSS는 `_inject_design_system()` 함수에 집중. Plotly는 프로젝트 전용 template `"finops"` 정의 후 모든 차트에 적용
+- **React** (`web/`): Tailwind 사용, CSS 변수는 `globals.css`에 design-system.md의 토큰 그대로 정의. shadcn 기본 스타일 금지
+- 상태값(anomaly severity, variance, budget status) 색상은 `design-system.md`의 Semantic Color Mapping 준수
+- Provider 구분(AWS/GCP/Azure)은 브랜드 원색 금지 — muted 팔레트 사용
+- 금액 표시: JetBrains Mono + tabular-nums, `$` 기호는 숫자보다 작게
+- 이모지 아이콘 금지 (Phosphor Icons 또는 인라인 SVG)
 ---
 
 ## 12. 멱등성 체크리스트
@@ -756,14 +771,90 @@ uv run mypy dagster_project
 - `test_asset_integration.py` — `dagster.materialize` 기반 통합 테스트 37개
 - **272 tests, 95.71% coverage** ✅
 
+### Phase 6 — ARIMA 탐지기 + HTTP FX Provider + Prophet CV + Budget CRUD UI
+
+- `ArimaDetector` — statsmodels ARIMA 잔차 기반 이상치 탐지, graceful ImportError 처리
+- `anomaly_detection.py` — `arima` 탐지기 통합 (`anomaly.active_detectors` 설정으로 제어)
+- `settings_store.py` — ARIMA 파라미터 6개 신규 설정 (order_p/d/q, threshold, min_samples)
+- `HttpFxProvider` — open.er-api.com 실시간 환율, `EXCHANGE_RATE_API_KEY` env, StaticFxProvider 폴백
+- `ProphetProvider.cross_validate()` — prophet.diagnostics 기반 MAE/RMSE/MAPE 자동 평가
+- `streamlit_app.py` — Budget CRUD UI (Add/Update/Delete 예산 항목)
+- **298 tests, 94.93% coverage** ✅
+
+### Phase 7 — Autoencoder 탐지기 + 비용 추천 엔진 + Settings UI
+
+- `AutoencoderDetector` — sklearn MLPRegressor 재구성 오차 기반 이상치 탐지 (슬라이딩 윈도우 autoencoder)
+- `anomaly_detection.py` — `autoencoder` 탐지기 통합
+- `settings_store.py` — autoencoder 파라미터 5개 신규 설정 (window_size, thresholds, min_samples, max_iter)
+- `cost_recommendations` asset — 비용 최적화 추천 3가지 규칙 (idle/high_growth/persistent_anomaly) → `dim_cost_recommendations`
+- `streamlit_app.py` — Settings 탭 추가 (platform_settings CRUD + active detectors 토글 + recommendations 표시)
+- **311 tests, 94.56% coverage** ✅
+
+### Phase 8 — 디자인 시스템 + Streamlit 개선
+
+- `docs/design-system.md` — Arc Browser 기반 디자인 토큰 단일 소스 (Warm palette, Squircle, Instrument Serif)
+- `scripts/streamlit_app.py` — `_inject_design_system()` + Plotly `"finops"` template + 탭 이모지 제거
+- `.streamlit/config.toml` — Warm palette (primaryColor `#D97757`, bg `#FAF7F2`)
+- **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
+- 참고: Next.js 랜딩페이지(`web/`)는 이 단계에서 프로토타입으로 제작했다가 Phase 8.1에서 대시보드 앱으로 방향 전환하면서 삭제함
+
+### Phase 8.1 — FastAPI + Next.js 대시보드 MVP
+
+- `api/main.py` — FastAPI 서버, `/api/overview` 엔드포인트 (DuckDB 직접 읽기, CORS 포함)
+  - 응답: `period_start/end`, `total_cost`, `cost_by_team[]`, `top_resources[]`, `anomaly_count`, `resource_count`
+- `web-app/` — Next.js 14 대시보드 앱 (포트 3002), 디자인 토큰 동일 적용
+  - `app/(dashboard)/layout.tsx` — 사이드바 레이아웃
+  - `app/(dashboard)/overview/page.tsx` — Server Component, SSR, StatCard/TeamBar/EnvBadge
+  - `app/(dashboard)/overview/data.ts` — `fetchOverview()` + 타입 정의
+- `deploy.sh` / `start.sh` / `stop.sh` — 전체 서비스 원커맨드 운영
+  - 서비스 구성: Dagster(3000), Streamlit(8501), FastAPI(8000), Dashboard(3002)
+- **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
+
 ---
 
-## 15. Phase 6 미구현 항목 (향후 계획)
+## 15. Phase 9 — 대시보드 확장
 
-- 실제 클라우드 API 연동 (AWS CUR S3 Export, GCP Billing Export API, Azure Cost Management API)
-- FX 실시간 환율 API Provider (ExchangeRates API 등)
-- LSTM / ARIMA 기반 추가 탐지기
-- Prophet 모델 파라미터 자동 튜닝 (Cross-validation)
-- 예산 편집 UI (Streamlit 내 CRUD)
-- 권한 관리 (팀별 데이터 접근 제어)
+Phase 8.1에서 Overview 페이지 MVP가 검증됐다. Phase 9는 나머지 핵심 뷰를 API + 페이지 단위로 증분 추가한다.
+
+### 추가할 API 엔드포인트 (`api/main.py`)
+
+| 엔드포인트 | 데이터 소스 | 핵심 응답 |
+|---|---|---|
+| `GET /api/anomalies` | `anomaly_scores` | severity별 목록, resource/team 필터 |
+| `GET /api/forecast` | `dim_forecast`, `dim_prophet_forecast` | resource별 예측 vs 실제 |
+| `GET /api/budget` | `dim_budget_status` | 팀/env별 예산 사용률, over/warning 목록 |
+| `GET /api/cost-explorer` | `fact_daily_cost` | 날짜·team·service·env 필터링, 일별 시계열 |
+| `GET /api/recommendations` | `dim_cost_recommendations` | 규칙별 추천 목록 |
+
+### 추가할 대시보드 페이지 (`web-app/app/(dashboard)/`)
+
+| 경로 | 설명 |
+|---|---|
+| `anomalies/page.tsx` | 이상치 목록, severity 배지, detector 이름 |
+| `forecast/page.tsx` | 예측 vs 실제 비교 테이블 |
+| `budget/page.tsx` | 팀별 예산 게이지 바, 초과/경고 하이라이트 |
+| `cost-explorer/page.tsx` | 날짜 범위 + team/env 필터, 일별 비용 바 차트 |
+| `recommendations/page.tsx` | idle/high_growth/persistent_anomaly 카드 |
+
+### 설계 원칙
+
+- **API**: 모든 엔드포인트는 `api/main.py` 단일 파일 유지. 라우터 분리는 엔드포인트 10개 초과 시.
+- **페이지**: 각 페이지는 Server Component 기본. 필터·인터랙션 필요 시만 `"use client"` 분리.
+- **데이터 fetch**: `next: { revalidate: 60 }` — 1분 캐시, 실시간 필요 없음.
+- **차트**: 순수 CSS/SVG 또는 경량 라이브러리. Recharts/Chart.js 중 하나만 선택 시 도입.
+- **사이드바**: `layout.tsx`에서 링크 목록을 배열로 관리, 페이지 추가 시 배열에만 추가.
+
+### 구현 순서
+
+1. `GET /api/anomalies` + `anomalies/page.tsx`
+2. `GET /api/budget` + `budget/page.tsx`
+3. `GET /api/cost-explorer` + `cost-explorer/page.tsx` (필터 포함)
+4. `GET /api/forecast` + `forecast/page.tsx`
+5. `GET /api/recommendations` + `recommendations/page.tsx`
+6. 사이드바 활성 링크 하이라이트 (`usePathname`)
+
+### 장기 과제 (Phase 10+)
+
+- 실제 클라우드 API 연동 (AWS CUR S3, GCP Billing Export, Azure Cost Management)
+- 팀별 데이터 접근 제어 (인증)
 - 이메일 AlertSink Streamlit 설정 UI

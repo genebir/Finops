@@ -143,3 +143,76 @@ class ProphetProvider:
             "prophet_forecast asset에서 forecast_from_df()를 사용하세요."
         )
         return []
+
+    def cross_validate(
+        self,
+        df: pl.DataFrame,
+        initial_days: int = 30,
+        period_days: int = 7,
+        horizon_days: int = 14,
+    ) -> dict[str, object]:
+        """Prophet Cross-Validation으로 예측 모델 정확도를 평가한다.
+
+        Args:
+            df: charge_date, resource_id, effective_cost 컬럼을 포함하는 DataFrame.
+            initial_days: 초기 학습 기간(일).
+            period_days: 교차 검증 슬라이딩 윈도우 간격(일).
+            horizon_days: 예측 지평선(일).
+
+        Returns:
+            resource_id별 MAE / RMSE / MAPE 메트릭을 담은 dict.
+        """
+        try:
+            from prophet import Prophet
+            from prophet.diagnostics import cross_validation, performance_metrics
+        except ImportError:
+            raise ImportError("prophet 패키지가 필요합니다: uv add prophet")
+
+        if df.is_empty():
+            return {}
+
+        metrics: dict[str, object] = {}
+        resource_ids = df["resource_id"].unique().to_list()
+
+        for resource_id in resource_ids:
+            sub = (
+                df.filter(pl.col("resource_id") == resource_id)
+                .select(["charge_date", "effective_cost"])
+                .sort("charge_date")
+            )
+            if len(sub) < initial_days + horizon_days:
+                logger.warning("CV 건너뜀 (데이터 부족): %s", resource_id)
+                continue
+
+            prophet_df = sub.rename(
+                {"charge_date": "ds", "effective_cost": "y"}
+            ).to_pandas()
+            prophet_df["ds"] = prophet_df["ds"].astype(str)
+
+            try:
+                model = Prophet(
+                    seasonality_mode=self.seasonality_mode,
+                    daily_seasonality=False,
+                    weekly_seasonality=True,
+                    yearly_seasonality=False,
+                )
+                model.fit(prophet_df)
+                df_cv = cross_validation(
+                    model,
+                    initial=f"{initial_days} days",
+                    period=f"{period_days} days",
+                    horizon=f"{horizon_days} days",
+                    disable_tqdm=True,
+                )
+                perf = performance_metrics(df_cv)
+                metrics[str(resource_id)] = {
+                    "mae": float(perf["mae"].mean()),
+                    "rmse": float(perf["rmse"].mean()),
+                    "mape": float(perf["mape"].mean()),
+                    "n_cutoffs": len(perf),
+                }
+            except Exception as exc:
+                logger.warning("Prophet CV 실패: %s — %s", resource_id, exc)
+
+        logger.info("ProphetProvider CV: %d/%d 리소스 평가 완료", len(metrics), len(resource_ids))
+        return metrics

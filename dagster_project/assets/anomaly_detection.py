@@ -136,6 +136,45 @@ def anomaly_detection(
         all_anomalies.extend(ma_anomalies)
         context.log.info(f"MovingAverage: {len(ma_anomalies)}개 이상치")
 
+    if "arima" in active_detectors:
+        try:
+            from ..detectors.arima_detector import ArimaDetector
+
+            arima_anomalies = ArimaDetector(
+                order=(
+                    settings_store.get_int("arima.order_p", 1),
+                    settings_store.get_int("arima.order_d", 1),
+                    settings_store.get_int("arima.order_q", 1),
+                ),
+                threshold_warning=settings_store.get_float("arima.threshold_warning", 2.0),
+                threshold_critical=settings_store.get_float("arima.threshold_critical", 3.0),
+                min_samples=settings_store.get_int("arima.min_samples", 10),
+            ).detect(df)
+            all_anomalies.extend(arima_anomalies)
+            context.log.info(f"ARIMA: {len(arima_anomalies)}개 이상치")
+        except ImportError:
+            context.log.warning("statsmodels 미설치 — arima 건너뜀")
+
+    if "autoencoder" in active_detectors:
+        try:
+            from ..detectors.autoencoder_detector import AutoencoderDetector
+
+            ae_anomalies = AutoencoderDetector(
+                window_size=settings_store.get_int("autoencoder.window_size", 7),
+                threshold_warning=settings_store.get_float(
+                    "autoencoder.threshold_warning", 2.0
+                ),
+                threshold_critical=settings_store.get_float(
+                    "autoencoder.threshold_critical", 3.0
+                ),
+                min_samples=settings_store.get_int("autoencoder.min_samples", 14),
+                max_iter=settings_store.get_int("autoencoder.max_iter", 200),
+            ).detect(df)
+            all_anomalies.extend(ae_anomalies)
+            context.log.info(f"Autoencoder: {len(ae_anomalies)}개 이상치")
+        except ImportError:
+            context.log.warning("scikit-learn 미설치 — autoencoder 건너뜀")
+
     context.log.info(
         f"Total anomalies: {len(all_anomalies)} "
         f"(critical: {sum(1 for a in all_anomalies if a.severity == 'critical')}, "
