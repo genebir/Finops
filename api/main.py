@@ -14,16 +14,24 @@ Adding a new endpoint:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .middleware import RequestContextMiddleware
 from .routers import (
     anomalies,
     budget,
+    burn_rate,
     chargeback,
+    cost_allocation,
     cost_explorer,
+    data_quality,
     filters,
     forecast,
+    inventory,
+    ops,
     overview,
     recommendations,
     settings,
+    showback,
+    tag_policy,
 )
 
 app = FastAPI(
@@ -32,16 +40,19 @@ app = FastAPI(
     description="Cost Intelligence API — backs the Next.js dashboard.",
 )
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
+    expose_headers=["x-request-id"],
 )
 
 
 @app.get("/health", tags=["meta"])
 def health() -> dict[str, str]:
+    """Lightweight liveness probe — returns ok if the process is responding."""
     return {"status": "ok"}
 
 
@@ -54,3 +65,10 @@ app.include_router(recommendations.router)
 app.include_router(chargeback.router)
 app.include_router(settings.router)
 app.include_router(filters.router)
+app.include_router(ops.router)
+app.include_router(data_quality.router)
+app.include_router(burn_rate.router)
+app.include_router(inventory.router)
+app.include_router(tag_policy.router)
+app.include_router(cost_allocation.router)
+app.include_router(showback.router)

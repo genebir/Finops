@@ -1,7 +1,8 @@
 import type {
-  AnomaliesData, BudgetData, BudgetEntry, BudgetEntryList,
-  ChargebackData, ExplorerData, FiltersData, ForecastData,
-  OverviewData, RecommendationsData, SettingItem, SettingsData,
+  AnomaliesData, BudgetData, BudgetEntry, BudgetEntryList, BurnRateData,
+  ChargebackData, DataQualityData, ExplorerData, FiltersData, ForecastData,
+  OpsHealthData, OpsRunsData, OverviewData, RecommendationsData,
+  SettingItem, SettingsData,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -91,4 +92,14 @@ export const api = {
     send<null>("DELETE", `/api/settings/${encodeURIComponent(key)}`),
 
   filters: () => getFresh<FiltersData>("/api/filters"),
+
+  opsRuns: (limit?: number) =>
+    getFresh<OpsRunsData>("/api/ops/runs", limit ? { limit: String(limit) } : undefined),
+  opsHealth: () => getFresh<OpsHealthData>("/api/ops/health"),
+
+  dataQuality: () => getFresh<DataQualityData>("/api/data-quality"),
+  exportUrl: (table: string) => `${API_BASE}/api/export/${encodeURIComponent(table)}`,
+
+  burnRate: (billing_month?: string) =>
+    get<BurnRateData>("/api/burn-rate", billing_month ? { billing_month } : undefined),
 };

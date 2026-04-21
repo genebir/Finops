@@ -49,7 +49,7 @@ scripts/streamlit_app.py (Streamlit 웹 대시보드)
 | 전처리 | Polars ≥1.0 | Bronze→Silver 정제 |
 | Table Format | Apache Iceberg (PyIceberg) | 로컬 레이크하우스 |
 | Catalog | SqlCatalog (SQLite) | 로컬 Iceberg 메타스토어 |
-| Analytics | DuckDB ≥1.0 | Silver→Gold 집계, 분석 마트 |
+| Analytics | PostgreSQL ≥14 | Silver→Gold 집계, 분석 마트, 런타임 설정 |
 | Validation | Pydantic v2 | 스키마·값 검증 |
 | Config | PyYAML + Pydantic | 정적 설정 로딩 |
 | Cost Forecast | Infracost CLI | Terraform 기반 비용 예측 |
@@ -63,6 +63,16 @@ scripts/streamlit_app.py (Streamlit 웹 대시보드)
 | Package Mgmt | uv | |
 | Lint/Type | ruff + mypy (strict) | |
 
+## 빠른 시작 (신규 머신)
+
+```bash
+# 원커맨드 설치 (macOS/Linux/WSL)
+bash install.sh
+
+# 선택: Infracost CLI 포함
+bash install.sh --with-infracost
+```
+
 ## 실행 방법
 
 ```bash
@@ -71,6 +81,9 @@ uv sync
 
 # 환경 설정
 cp .env.example .env
+
+# DB 스키마 부트스트랩
+uv run python scripts/init_db.py
 
 # Infracost CLI 설치 (선택)
 curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
@@ -103,7 +116,9 @@ uv run mypy dagster_project
 | `SMTP_HOST` / `SMTP_PORT` | SMTP 서버 | localhost / 587 |
 | `SMTP_USER` / `SMTP_PASSWORD` | SMTP 인증 | |
 | `CUR_SEED` | AWS CUR 생성 시드 | 42 |
-| `DUCKDB_PATH` | DuckDB 파일 경로 | data/marts.duckdb |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | PostgreSQL 접속 | localhost / 5432 |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | PostgreSQL 인증 | finops_app / finops_secret_2026 |
+| `POSTGRES_DBNAME` | PostgreSQL DB 이름 | finops |
 | `ICEBERG_WAREHOUSE` | Iceberg 웨어하우스 경로 | data/warehouse |
 
 ## 런타임 설정 변경 (재시작 불필요)
@@ -141,11 +156,12 @@ finops-platform/
 │   └── streamlit_app.py        # Streamlit 웹 대시보드 (6탭)
 ├── sql/marts/                  # DuckDB DDL / View SQL
 ├── terraform/sample/           # Infracost 분석 대상 IaC (EC2/RDS/S3)
-├── tests/                      # pytest 테스트 (272개, 95.71% 커버리지)
+├── tests/                      # pytest 테스트 (360개)
+├── install.sh                  # 크로스플랫폼 원커맨드 인스톨러
+├── scripts/init_db.py          # DB 스키마 부트스트랩 CLI
 └── data/                       # 생성된 데이터 (gitignored)
     ├── warehouse/              # Iceberg 데이터
     ├── catalog.db              # SqlCatalog SQLite
-    ├── marts.duckdb            # DuckDB
     └── reports/                # 출력 CSV
 ```
 
@@ -160,3 +176,16 @@ finops-platform/
 | Phase 5 | FX 환율, MovingAverage 탐지기, EmailSink, 통합 테스트 | **272 / 95.7%** |
 | Phase 6 | ARIMA 탐지기, HTTP FX Provider, Prophet CV, Budget CRUD UI | **298 / 94.9%** |
 | Phase 7 | Autoencoder 탐지기, 비용 추천 엔진, Settings UI | **311 / 94.6%** |
+| Phase 8 | 디자인 시스템, Streamlit 개선 | **311 / 94.6%** |
+| Phase 8.1 | FastAPI + Next.js 14 대시보드 MVP (Overview) | **311 / 94.6%** |
+| Phase 9 | 대시보드 5개 페이지 확장 (anomalies/budget/explorer/forecast/recommendations) | **311 / 94.6%** |
+| Phase 10 | API 재구조화 (router/model/deps), Budget CRUD, Settings CRUD UI | **311 / 94.6%** |
+| Phase 11 | DuckDB → PostgreSQL 전면 마이그레이션 | **288 / pass** |
+| Phase 11.1 | Settings 풀 CRUD, 테이블 UX 개선 | **288 / pass** |
+| Phase 12 | 옵스 관측성 (pipeline_run_log, /api/ops/*, Prometheus metrics, Ops 대시보드) | **299 / pass** |
+| Phase 13 | 데이터 품질 검증 asset + CSV export API + Data Quality 대시보드 | **309 / pass** |
+| Phase 14 | 번 레이트 asset + Dagster 스케줄 + /api/burn-rate + Burn Rate 대시보드 | **317 / pass** |
+| Phase 15 | 리소스 인벤토리 + 태그 완성도 검증 + /api/inventory | **327 / pass** |
+| Phase 16 | 태그 정책 엔진 + dim_tag_violations + /api/tag-policy | **340 / pass** |
+| Phase 17 | 비용 배분 + 분할 규칙 CRUD + /api/cost-allocation | **351 / pass** |
+| Phase 18 | Showback 리포트 asset + JSON export + /api/showback | **360 / pass** |

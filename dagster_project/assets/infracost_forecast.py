@@ -8,6 +8,7 @@ from typing import Any
 from dagster import AssetExecutionContext, asset
 
 from ..core.forecast_provider import ForecastRecord
+from ..db_schema import ensure_tables
 from ..generators.aws_cur_generator import _TERRAFORM_RESOURCES
 from ..resources.duckdb_io import DuckDBResource
 from ..resources.infracost_cli import InfracostCliResource
@@ -70,6 +71,7 @@ def _stub_forecast_records() -> list[ForecastRecord]:
 def _write_forecast_rows(conn: Any, rows: list[dict[str, Any]]) -> None:
     import psycopg2.extras
 
+    ensure_tables(conn, "dim_forecast")
     cur = conn.cursor()
     cur.execute("DELETE FROM dim_forecast")
     if not rows:

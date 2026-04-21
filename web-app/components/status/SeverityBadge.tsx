@@ -10,6 +10,9 @@ const SEVERITY: Record<string, { color: string; bg: string }> = {
   staging:  { color: "var(--status-warning)",  bg: "rgba(232,160,74,0.08)" },
   dev:      { color: "var(--status-healthy)",  bg: "rgba(127,183,126,0.08)" },
   unknown:  { color: "var(--text-tertiary)",   bg: "rgba(168,159,148,0.1)" },
+  success:  { color: "var(--status-healthy)",  bg: "rgba(127,183,126,0.1)" },
+  failure:  { color: "var(--status-critical)", bg: "rgba(200,85,61,0.1)" },
+  started:  { color: "var(--status-warning)",  bg: "rgba(232,160,74,0.1)" },
 };
 
 export function SeverityBadge({ severity }: { severity: string }) {

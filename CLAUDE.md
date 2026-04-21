@@ -1,8 +1,8 @@
 # FinOps Platform — 완전 구현 사양서
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
-> Phase 1 → … → Phase 11.1 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 11.1 완료 — PostgreSQL 기반, Settings 풀 CRUD, 288 tests pass.
+> Phase 1 → … → Phase 18 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
+> **현재 상태:** Phase 18 완료 — Showback 리포트 asset + JSON export API + /api/showback, 360 tests pass.
 
 ---
 
@@ -880,6 +880,118 @@ uv run mypy dagster_project
 - Badge/pill 컬럼 가운데 정렬 — Env/Severity/Status/Source 컬럼 `textAlign: "center"`
 - `variance.py` — `ROUND()` 결과에 `AS variance_pct` 별칭 추가 (KeyError 수정)
 - **288 tests pass** ✅
+
+### Phase 12 — 옵스 관측성 (Observability & Ops)
+
+- `dagster_project/db_schema.py` — 중앙 집중 DDL 스토어 + `ensure_tables()` / `ensure_base_tables()` / `init_db.py`
+- `pipeline_run_log` 테이블 — Dagster run 성공/실패 로그 (run_id, asset_key, partition_key, status, duration_sec, row_count, error_message)
+- `dagster_project/sensors/run_logger.py` — `pipeline_run_success_sensor` / `pipeline_run_failure_sensor` (run_status_sensor + run_failure_sensor)
+- `dagster_project/definitions.py` — sensors 등록
+- `api/routers/ops.py` — `/api/ops/runs`, `/api/ops/health`, `/api/ops/live`, `/api/ops/ready`, `/api/ops/metrics`
+- `/api/ops/metrics` — Prometheus text format (finops_table_rows, finops_anomalies_active_30d, finops_budgets_over, finops_database_up 등)
+- `api/middleware.py` — `RequestContextMiddleware` (x-request-id 헤더, JSON access log)
+- `web-app/app/(dashboard)/ops/` — OpsClient (10초 자동 새로고침), KPI 카드 4개, Recent Runs 테이블, Table Health 테이블
+- `install.sh` — 크로스플랫폼 원커맨드 인스톨러 (macOS/Debian/RHEL/Arch/Alpine), uv sync + PostgreSQL 부트스트랩 + npm build
+- `scripts/init_db.py` — DB 스키마 부트스트랩 CLI (ensure_base_tables + platform_settings seed)
+- 모든 asset 파일에 `ensure_tables()` 추가 → 신규 머신 자가치유 멱등성
+- `tests/test_api_ops.py` (8개), `tests/test_run_logger.py` (3개) 추가
+- **299 tests pass** ✅
+
+### Phase 13 — 데이터 품질 검증 + CSV Export
+
+- `dagster_project/assets/data_quality.py` — `data_quality` asset
+  - 10개 자동 검증 규칙: `min_rows` / `no_negatives` / `null_ratio`
+  - fact_daily_cost, anomaly_scores, dim_prophet_forecast, dim_budget, dim_chargeback, dim_fx_rates 검증
+  - 결과를 `dim_data_quality` 테이블에 저장 (7일 롤링 보존)
+- `dagster_project/db_schema.py` — `dim_data_quality` DDL 추가
+- `dagster_project/definitions.py` — `data_quality` asset 등록
+- `api/routers/data_quality.py` — `/api/data-quality` (최신 체크 결과), `/api/export/{table}` (CSV 다운로드)
+  - 9개 테이블 CSV export 지원 (최대 100k 행)
+  - 알 수 없는 테이블은 404
+- `web-app/app/(dashboard)/data-quality/` — DataQualityClient (30초 자동 새로고침)
+  - KPI 카드 4개 (Total/Passed/Failed/Health)
+  - 체크 결과 테이블 (All / Failed 필터)
+  - CSV Export 링크 목록
+- 사이드바에 "Data Quality" 항목 추가
+- `tests/test_data_quality.py` (10개) 추가
+- **309 tests pass** ✅
+
+### Phase 14 — 번 레이트 모니터링 + Dagster 스케줄
+
+- `dagster_project/assets/burn_rate.py` — `burn_rate` asset
+  - 현재/전월 (team, env) 단위 MTD 비용, 일평균, 월말 예상 비용 계산
+  - `dim_budget`와 조인해 `projected_utilization` 산출 (critical/warning/on_track/no_budget)
+  - `dim_burn_rate` 테이블에 DELETE+INSERT 멱등 저장
+- `dagster_project/db_schema.py` — `dim_burn_rate` DDL 추가
+- `dagster_project/schedules/monthly.py` — Dagster 스케줄 2개
+  - `monthly_burn_rate_schedule` — 매월 2일 06:00 UTC
+  - `daily_data_quality_schedule` — 매일 07:00 UTC (기본 STOPPED)
+- `dagster_project/definitions.py` — `burn_rate` asset + schedules 등록
+- `api/routers/burn_rate.py` — `GET /api/burn-rate?billing_month=YYYY-MM`
+  - items 목록 + summary (total_mtd, projected_eom, critical/warning/on_track count)
+- `web-app/app/(dashboard)/burn-rate/page.tsx` — Server Component, BurnBar 게이지, 상태 배지
+- 사이드바에 "Burn Rate" 항목 추가
+- `tests/test_burn_rate.py` (8개) 추가
+- **317 tests pass** ✅
+
+### Phase 15 — 리소스 인벤토리 + 태그 완성도
+
+- `dagster_project/assets/resource_inventory.py` — `resource_inventory` asset
+  - `fact_daily_cost` 전체를 resource_id 단위로 집계 → `dim_resource_inventory`
+  - `team` / `product` / `env` 3개 필수 태그 완성도 검증 (`tags_complete`, `missing_tags`)
+  - ON CONFLICT (resource_id) DO UPDATE — 점진 upsert
+  - `total_cost_30d` — 최근 30일 비용 집계
+- `dagster_project/db_schema.py` — `dim_resource_inventory` DDL (PRIMARY KEY resource_id)
+- `dagster_project/definitions.py` — `resource_inventory` asset 등록
+- `api/routers/inventory.py` — `GET /api/inventory`
+  - 필터: provider / team / env / tags_complete
+  - 응답: items + summary (total, complete, incomplete, completeness_pct)
+- `tests/test_resource_inventory.py` (10개) 추가
+- **327 tests pass** ✅
+
+### Phase 16 — 태그 정책 엔진 + 위반 추적
+
+- `dagster_project/assets/tag_policy.py` — `tag_policy` asset
+  - `_DEFAULT_POLICY`: 서비스 카테고리별 필수 태그 규칙 (`*` 와일드카드 지원)
+  - `platform_settings.tag_policy.rules` JSON으로 런타임 정책 교체 가능
+  - `dim_tag_violations` — 당일 위반 DELETE+INSERT, cost_30d 기준 severity 산출 (1000+ → critical, 다중 누락 → critical)
+- `dagster_project/db_schema.py` — `dim_tag_violations` DDL 추가
+- `dagster_project/resources/settings_store.py` — `tag_policy.rules` 기본 설정 추가
+- `dagster_project/definitions.py` — `tag_policy` asset 등록
+- `api/routers/tag_policy.py` — `GET /api/tag-policy`
+  - 필터: severity / provider / missing_tag
+  - 응답: violations + summary (total, critical, warning)
+- `tests/test_tag_policy.py` (13개) 추가
+- **340 tests pass** ✅
+
+### Phase 17 — 비용 배분 (Cost Allocation)
+
+- `dagster_project/assets/cost_allocation.py` — `cost_allocation` asset
+  - `dim_allocation_rules` 테이블에서 분할 규칙 로드 (resource_id → [(team, split_pct)])
+  - 규칙에 매칭되는 리소스의 일별 비용을 팀 단위로 비례 분할
+  - `dim_allocated_cost` — DELETE(resource_ids) + INSERT 멱등 저장
+  - `allocation_type`: split (다중 팀) / full (단일 팀)
+- `dagster_project/db_schema.py` — `dim_allocation_rules` + `dim_allocated_cost` DDL 추가
+- `api/routers/cost_allocation.py` — 전체 CRUD + 조회
+  - `GET /api/cost-allocation/rules` — 규칙 목록
+  - `POST /api/cost-allocation/rules` (201) — 신규 규칙 (split_pct 0<x≤100 검증)
+  - `PUT /api/cost-allocation/rules/{id}` — 규칙 수정
+  - `DELETE /api/cost-allocation/rules/{id}` (204) — 규칙 삭제
+  - `GET /api/cost-allocation?team=X&billing_month=YYYY-MM` — 배분된 비용 조회
+- `tests/test_cost_allocation.py` (11개) 추가
+- **351 tests pass** ✅
+
+### Phase 18 — Showback 리포트 + JSON Export
+
+- `dagster_project/assets/showback_report.py` — `showback_report` asset
+  - 팀별 MTD 비용, 예산 사용률, 이상치 건수, Top-3 서비스/리소스 집계
+  - `dim_showback_report` — JSONB 컬럼(top_services/top_resources), DELETE+INSERT 멱등
+  - 현재 + 전월 2개월 계산
+- `dagster_project/db_schema.py` — `dim_showback_report` DDL (JSONB) 추가
+- `api/routers/showback.py` — `/api/showback` (조회) + `/api/showback/export` (JSON 다운로드)
+  - `billing_month` / `team` 필터, Content-Disposition 헤더
+- `tests/test_showback_report.py` (9개) 추가
+- **360 tests pass** ✅
 
 ---
 

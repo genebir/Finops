@@ -9,6 +9,7 @@ from dagster import AssetExecutionContext, asset
 
 from ..config import load_config
 from ..core.alert_sink import Alert
+from ..db_schema import ensure_tables
 from ..resources.budget_store import BudgetStoreResource
 from ..resources.duckdb_io import DuckDBResource
 from ..resources.settings_store import SettingsStoreResource
@@ -50,6 +51,7 @@ def budget_alerts(
     now = datetime.now(tz=UTC)
 
     with duckdb_resource.get_connection() as conn:
+        ensure_tables(conn, "fact_daily_cost", "dim_budget_status")
         cur = conn.cursor()
         cur.execute(
             "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='fact_daily_cost'"

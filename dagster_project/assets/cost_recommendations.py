@@ -6,6 +6,7 @@ import polars as pl
 from dagster import AssetExecutionContext, asset
 
 from ..config import load_config
+from ..db_schema import ensure_tables
 from ..resources.duckdb_io import DuckDBResource
 from ..resources.settings_store import SettingsStoreResource
 from .raw_cur import MONTHLY_PARTITIONS
@@ -35,6 +36,7 @@ def cost_recommendations(
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     with duckdb_resource.get_connection() as conn:
+        ensure_tables(conn, "fact_daily_cost", "dim_cost_recommendations", "anomaly_scores")
         cur = conn.cursor()
         cur.execute(
             "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='fact_daily_cost'"

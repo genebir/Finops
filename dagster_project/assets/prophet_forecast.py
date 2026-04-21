@@ -6,6 +6,7 @@ import polars as pl
 from dagster import AssetExecutionContext, asset
 
 from ..config import load_config
+from ..db_schema import ensure_tables
 from ..providers.prophet_provider import ProphetProvider
 from ..resources.duckdb_io import DuckDBResource
 from .raw_cur import MONTHLY_PARTITIONS
@@ -31,6 +32,7 @@ def prophet_forecast(
     month_str = partition_key[:7]
 
     with duckdb_resource.get_connection() as conn:
+        ensure_tables(conn, "fact_daily_cost", "dim_prophet_forecast")
         cur = conn.cursor()
         cur.execute(
             "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='fact_daily_cost'"

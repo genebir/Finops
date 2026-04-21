@@ -10,6 +10,9 @@ const NAV = [
   { href: "/forecast",         label: "Forecast" },
   { href: "/budget",           label: "Budget" },
   { href: "/recommendations",  label: "Recommendations" },
+  { href: "/ops",              label: "Ops" },
+  { href: "/data-quality",     label: "Data Quality" },
+  { href: "/burn-rate",        label: "Burn Rate" },
 ];
 
 export default function Sidebar() {

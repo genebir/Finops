@@ -83,3 +83,63 @@ export interface FiltersData {
   date_min: string | null;
   date_max: string | null;
 }
+
+export interface RunLogEntry {
+  id: number;
+  run_id: string;
+  asset_key: string;
+  partition_key: string | null;
+  status: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_sec: number | null;
+  row_count: number | null;
+  error_message: string | null;
+}
+export interface OpsRunsData {
+  runs: RunLogEntry[];
+  success_count: number;
+  failure_count: number;
+  latest_success_at: string | null;
+  latest_failure_at: string | null;
+}
+export interface TableHealthRow {
+  table: string; row_count: number; latest_ts: string | null;
+}
+export interface OpsHealthData {
+  db_reachable: boolean;
+  tables: TableHealthRow[];
+  checked_at: string;
+}
+
+export interface BurnRateItem {
+  team: string; env: string;
+  days_elapsed: number; days_in_month: number;
+  mtd_cost: number; daily_avg: number; projected_eom: number;
+  budget_amount: number | null;
+  projected_utilization: number | null;
+  status: string;
+  refreshed_at: string | null;
+}
+export interface BurnRateSummary {
+  total_mtd: number; total_projected_eom: number;
+  critical_count: number; warning_count: number; on_track_count: number;
+}
+export interface BurnRateData {
+  billing_month: string; items: BurnRateItem[]; summary: BurnRateSummary;
+}
+
+export interface DqCheck {
+  id: number;
+  checked_at: string | null;
+  table_name: string;
+  column_name: string;
+  check_type: string;
+  row_count: number | null;
+  failed_count: number | null;
+  null_ratio: number | null;
+  passed: boolean;
+  detail: string | null;
+}
+export interface DqSummary { total: number; passed: number; failed: number }
+export interface DataQualityData { checks: DqCheck[]; summary: DqSummary }

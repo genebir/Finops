@@ -2,6 +2,7 @@
 
 from dagster import AssetExecutionContext, asset
 
+from ..db_schema import ensure_tables
 from ..providers.static_fx_provider import StaticFxProvider
 from ..resources.duckdb_io import DuckDBResource
 from .raw_cur import MONTHLY_PARTITIONS
@@ -25,6 +26,7 @@ def fx_rates(
     context.log.info(f"Loaded {len(rates)} FX rates from StaticFxProvider")
 
     with duckdb_resource.get_connection() as conn:
+        ensure_tables(conn, "dim_fx_rates")
         cur = conn.cursor()
         cur.execute("DELETE FROM dim_fx_rates WHERE base_currency = 'USD'")
 

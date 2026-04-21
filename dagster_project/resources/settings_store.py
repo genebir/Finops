@@ -61,6 +61,7 @@ _DEFAULT_SETTINGS: list[tuple[str, str, str, str]] = [
     ("autoencoder.threshold_critical",  "3.0",  "float", "Autoencoder 재구성 오차 위험 임계값 (σ 배수)"),
     ("autoencoder.min_samples",         "14",   "int",   "Autoencoder 최소 샘플 수"),
     ("autoencoder.max_iter",            "200",  "int",   "Autoencoder MLPRegressor 최대 반복 횟수"),
+    ("tag_policy.rules",                "",     "str",   "태그 정책 JSON (빈 값 = 기본 정책 사용)"),
 ]
 
 

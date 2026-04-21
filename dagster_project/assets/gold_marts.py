@@ -7,6 +7,7 @@ import polars as pl
 from dagster import AssetExecutionContext, asset
 
 from ..config import load_config
+from ..db_schema import ensure_tables
 from ..resources.duckdb_io import DuckDBResource
 from ..resources.iceberg_catalog import IcebergCatalogResource
 from ..resources.settings_store import SettingsStoreResource
@@ -129,6 +130,7 @@ def gold_marts(
     )
 
     with duckdb_resource.get_connection() as conn:
+        ensure_tables(conn, "fact_daily_cost", "dim_cost_unit")
         cur = conn.cursor()
 
         cur.execute(
