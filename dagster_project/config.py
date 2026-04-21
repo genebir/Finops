@@ -23,6 +23,18 @@ class DataConfig(BaseModel):
     reports_dir: str = "data/reports"
 
 
+class PostgresConfig(BaseModel):
+    host: str = "localhost"
+    port: int = 5432
+    dbname: str = "finops"
+    user: str = "finops_app"
+    password: str = "finops_secret_2026"
+
+    @property
+    def dsn(self) -> str:
+        return f"host={self.host} port={self.port} dbname={self.dbname} user={self.user} password={self.password}"
+
+
 class DagsterConfig(BaseModel):
     partition_start_date: str = "2024-01-01"
 
@@ -125,6 +137,7 @@ class OperationalDefaultsConfig(BaseModel):
 
 class AppConfig(BaseModel):
     data: DataConfig = Field(default_factory=DataConfig)
+    postgres: PostgresConfig = Field(default_factory=PostgresConfig)
     dagster: DagsterConfig = Field(default_factory=DagsterConfig)
     iceberg: IcebergConfig = Field(default_factory=IcebergConfig)
     cur_generator: CurGeneratorConfig = Field(default_factory=CurGeneratorConfig)
@@ -166,6 +179,11 @@ def _apply_env_overrides(cfg: dict[str, object]) -> dict[str, object]:
         (["data", "reports_dir"], "REPORTS_DIR"),
         (["infracost", "terraform_path"], "TERRAFORM_PATH"),
         (["infracost", "binary"], "INFRACOST_BINARY"),
+        (["postgres", "host"], "POSTGRES_HOST"),
+        (["postgres", "port"], "POSTGRES_PORT"),
+        (["postgres", "dbname"], "POSTGRES_DBNAME"),
+        (["postgres", "user"], "POSTGRES_USER"),
+        (["postgres", "password"], "POSTGRES_PASSWORD"),
     ]
     result = dict(cfg)
     for keys, env_var in overrides:
@@ -174,7 +192,7 @@ def _apply_env_overrides(cfg: dict[str, object]) -> dict[str, object]:
             node: dict[str, object] = result
             for k in keys[:-1]:
                 node = node.setdefault(k, {})  # type: ignore[assignment]
-            node[keys[-1]] = int(val) if env_var == "CUR_SEED" else val
+            node[keys[-1]] = int(val) if env_var in ("CUR_SEED", "POSTGRES_PORT") else val
     return result
 
 

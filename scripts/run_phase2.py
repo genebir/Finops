@@ -10,10 +10,8 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
 from pathlib import Path
 
-# 프로젝트 루트를 sys.path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dagster_project.config import load_config
@@ -23,8 +21,8 @@ from dagster_project.resources.settings_store import SettingsStoreResource
 PARTITION_KEY = sys.argv[1] if len(sys.argv) > 1 else "2026-03-01"
 cfg = load_config()
 
-duckdb_resource = DuckDBResource(db_path=cfg.data.duckdb_path)
-settings_store = SettingsStoreResource(db_path=cfg.data.duckdb_path)
+duckdb_resource = DuckDBResource()
+settings_store = SettingsStoreResource()
 
 
 # ── Step 1: settings_store 초기화 ──────────────────────────────────────────
@@ -46,16 +44,22 @@ threshold_warning = settings_store.get_float("anomaly.zscore.warning", 2.0)
 threshold_critical = settings_store.get_float("anomaly.zscore.critical", 3.0)
 
 with duckdb_resource.get_connection() as conn:
-    arrow = conn.execute(f"""
+    cur = conn.cursor()
+    cur.execute(
+        """
         SELECT charge_date, resource_id, cost_unit_key, team, product, env,
-               CAST(effective_cost AS DOUBLE) AS effective_cost
+               CAST(effective_cost AS DOUBLE PRECISION) AS effective_cost
         FROM fact_daily_cost
-        WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+        WHERE to_char(charge_date, 'YYYY-MM') = %s
         ORDER BY resource_id, charge_date
-    """).arrow()
+        """,
+        [month_str],
+    )
+    columns = [desc[0] for desc in cur.description]
+    rows = cur.fetchall()
+    cur.close()
 
-df = pl.from_arrow(arrow)
-assert isinstance(df, pl.DataFrame)
+df = pl.DataFrame(rows, schema=columns, orient="row")
 print(f"  데이터: {len(df)}행, 리소스: {df['resource_id'].n_unique()}개")
 
 detector = ZScoreDetector(threshold_warning=threshold_warning, threshold_critical=threshold_critical)
@@ -75,8 +79,7 @@ output_csv = Path(cfg.data.reports_dir) / f"anomalies_{PARTITION_KEY[:7].replace
 Path(cfg.data.reports_dir).mkdir(parents=True, exist_ok=True)
 if anomalies:
     import polars as pl
-    from decimal import Decimal
-    rows = [
+    anomaly_rows = [
         {
             "resource_id": a.resource_id,
             "cost_unit_key": a.cost_unit_key,
@@ -89,22 +92,25 @@ if anomalies:
         }
         for a in anomalies
     ]
-    pl.DataFrame(rows).write_csv(str(output_csv))
+    pl.DataFrame(anomaly_rows).write_csv(str(output_csv))
 print(f"  → {output_csv} 저장 ({len(anomalies)}행)")
 
 
 # ── Step 3: prophet_forecast ───────────────────────────────────────────────
-print(f"\n[3/3] prophet_forecast 실행...")
+print("\n[3/3] prophet_forecast 실행...")
 from dagster_project.providers.prophet_provider import ProphetProvider
 
 with duckdb_resource.get_connection() as conn:
-    arrow = conn.execute("""
-        SELECT charge_date, resource_id, CAST(effective_cost AS DOUBLE) AS effective_cost
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT charge_date, resource_id, CAST(effective_cost AS DOUBLE PRECISION) AS effective_cost
         FROM fact_daily_cost ORDER BY resource_id, charge_date
-    """).arrow()
+    """)
+    columns_all = [desc[0] for desc in cur.description]
+    rows_all = cur.fetchall()
+    cur.close()
 
-df_all = pl.from_arrow(arrow)
-assert isinstance(df_all, pl.DataFrame)
+df_all = pl.DataFrame(rows_all, schema=columns_all, orient="row")
 
 try:
     provider = ProphetProvider(

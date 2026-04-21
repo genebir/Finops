@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS anomaly_scores (
     effective_cost    DECIMAL(18, 6) NOT NULL,
     mean_cost         DECIMAL(18, 6) NOT NULL,
     std_cost          DECIMAL(18, 6) NOT NULL,
-    z_score           DOUBLE  NOT NULL,
+    z_score           DOUBLE PRECISION NOT NULL,
     is_anomaly        BOOLEAN NOT NULL,
     severity          VARCHAR NOT NULL  -- 'critical' | 'warning' | 'ok'
 );

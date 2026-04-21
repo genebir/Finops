@@ -4,21 +4,26 @@
     uv run streamlit run scripts/streamlit_app.py
 
 환경변수:
-    DUCKDB_PATH: DuckDB 파일 경로 (기본: data/marts.duckdb)
+    POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DBNAME, POSTGRES_USER, POSTGRES_PASSWORD
 """
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
-import duckdb
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
+import psycopg2
 import streamlit as st
 
-_DUCKDB_PATH = os.environ.get("DUCKDB_PATH", "data/marts.duckdb")
+_PG_DSN = (
+    f"host={os.getenv('POSTGRES_HOST', 'localhost')} "
+    f"port={os.getenv('POSTGRES_PORT', '5432')} "
+    f"dbname={os.getenv('POSTGRES_DBNAME', 'finops')} "
+    f"user={os.getenv('POSTGRES_USER', 'finops_app')} "
+    f"password={os.getenv('POSTGRES_PASSWORD', 'finops_secret_2026')}"
+)
 
 st.set_page_config(
     page_title="FinOps Platform",
@@ -170,16 +175,39 @@ def _inject_design_system() -> None:
 _inject_design_system()
 
 
+def _get_conn(readonly: bool = True) -> psycopg2.extensions.connection:
+    conn = psycopg2.connect(_PG_DSN)
+    conn.autocommit = True
+    return conn
+
+
+def _table_exists(conn: psycopg2.extensions.connection, table: str) -> bool:
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename=%s",
+        [table],
+    )
+    exists = cur.fetchone() is not None
+    cur.close()
+    return exists
+
+
 @st.cache_data(ttl=300)
-def _query(sql: str) -> list[dict[str, object]]:
-    """DuckDB 쿼리 결과를 dict 리스트로 반환한다. 파일 없으면 빈 리스트."""
-    if not Path(_DUCKDB_PATH).exists():
-        return []
+def _query(sql: str, params: list[object] | None = None) -> list[dict[str, object]]:
+    """PostgreSQL 쿼리 결과를 dict 리스트로 반환한다."""
     try:
-        conn = duckdb.connect(_DUCKDB_PATH, read_only=True)
-        result = conn.execute(sql).fetchdf()
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(sql, params or [])
+        if cur.description is None:
+            cur.close()
+            conn.close()
+            return []
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        cur.close()
         conn.close()
-        return result.to_dict("records")  # type: ignore[return-value]
+        return [dict(zip(columns, row)) for row in rows]
     except Exception:
         return []
 
@@ -187,7 +215,7 @@ def _query(sql: str) -> list[dict[str, object]]:
 @st.cache_data(ttl=300)
 def _available_months() -> list[str]:
     rows = _query(
-        "SELECT DISTINCT STRFTIME(charge_date, '%Y-%m') AS m "
+        "SELECT DISTINCT to_char(charge_date, 'YYYY-MM') AS m "
         "FROM fact_daily_cost ORDER BY m DESC LIMIT 24"
     )
     return [str(r["m"]) for r in rows]
@@ -221,7 +249,7 @@ providers = _available_providers()
 selected_provider = st.sidebar.selectbox("Cloud Provider", providers, index=0)
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"Data source: `{_DUCKDB_PATH}`")
+st.sidebar.caption("Data source: PostgreSQL")
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -247,11 +275,11 @@ with tab_overview:
         total_rows = _query(f"""
             SELECT
                 COUNT(DISTINCT resource_id) AS resources,
-                SUM(CAST(effective_cost AS DOUBLE)) AS total_cost,
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS total_cost,
                 COUNT(DISTINCT provider) AS providers,
                 COUNT(DISTINCT cost_unit_key) AS cost_units
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{selected_month}'
+            WHERE to_char(charge_date, 'YYYY-MM') = '{selected_month}'
             {pf}
         """)
         if total_rows:
@@ -265,11 +293,11 @@ with tab_overview:
         st.subheader("Daily Cost Trend")
         daily = _query(f"""
             SELECT
-                charge_date,
+                charge_date::TEXT,
                 provider,
-                SUM(CAST(effective_cost AS DOUBLE)) AS cost
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS cost
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{selected_month}'
+            WHERE to_char(charge_date, 'YYYY-MM') = '{selected_month}'
             {pf}
             GROUP BY charge_date, provider
             ORDER BY charge_date
@@ -288,9 +316,9 @@ with tab_overview:
         by_service = _query(f"""
             SELECT
                 service_name,
-                SUM(CAST(effective_cost AS DOUBLE)) AS cost
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS cost
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{selected_month}'
+            WHERE to_char(charge_date, 'YYYY-MM') = '{selected_month}'
             {pf}
             GROUP BY service_name
             ORDER BY cost DESC
@@ -326,10 +354,10 @@ with tab_explorer:
         rows = _query(f"""
             SELECT
                 {group_by} AS dimension,
-                SUM(CAST(effective_cost AS DOUBLE)) AS cost,
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS cost,
                 COUNT(DISTINCT resource_id) AS resources
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{selected_month}'
+            WHERE to_char(charge_date, 'YYYY-MM') = '{selected_month}'
             {pf}
             GROUP BY {group_by}
             ORDER BY cost DESC
@@ -363,12 +391,13 @@ with tab_anomaly:
         anomaly_rows = _query(f"""
             SELECT
                 resource_id, cost_unit_key, team, product, env,
-                charge_date,
-                CAST(effective_cost AS DOUBLE) AS effective_cost,
-                CAST(mean_cost AS DOUBLE) AS mean_cost,
-                z_score, severity, detector_name
+                charge_date::TEXT,
+                CAST(effective_cost AS DOUBLE PRECISION) AS effective_cost,
+                CAST(mean_cost AS DOUBLE PRECISION) AS mean_cost,
+                CAST(z_score AS DOUBLE PRECISION) AS z_score,
+                severity, detector_name
             FROM anomaly_scores
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{selected_month}'
+            WHERE to_char(charge_date, 'YYYY-MM') = '{selected_month}'
             ORDER BY ABS(z_score) DESC
             LIMIT 200
         """)
@@ -411,11 +440,11 @@ with tab_forecast:
     forecast_rows = _query("""
         SELECT
             resource_id,
-            CAST(predicted_monthly_cost AS DOUBLE) AS predicted,
-            CAST(lower_bound_monthly_cost AS DOUBLE) AS lower_bound,
-            CAST(upper_bound_monthly_cost AS DOUBLE) AS upper_bound,
-            CAST(hourly_cost AS DOUBLE) AS hourly_cost,
-            model_trained_at
+            CAST(predicted_monthly_cost AS DOUBLE PRECISION) AS predicted,
+            CAST(lower_bound_monthly_cost AS DOUBLE PRECISION) AS lower_bound,
+            CAST(upper_bound_monthly_cost AS DOUBLE PRECISION) AS upper_bound,
+            CAST(hourly_cost AS DOUBLE PRECISION) AS hourly_cost,
+            model_trained_at::TEXT
         FROM dim_prophet_forecast
         ORDER BY predicted DESC
         LIMIT 50
@@ -441,17 +470,17 @@ with tab_forecast:
 
         variance_rows = _query(f"""
             SELECT resource_id, status, billing_month,
-                   CAST(forecast_monthly_cost AS DOUBLE) AS forecast,
-                   CAST(actual_monthly_cost AS DOUBLE) AS actual,
-                   variance_pct
+                   CAST(forecast_monthly_cost AS DOUBLE PRECISION) AS forecast,
+                   CAST(actual_monthly_cost AS DOUBLE PRECISION) AS actual,
+                   CAST(variance_pct AS DOUBLE PRECISION) AS variance_pct
             FROM dim_forecast_variance_prophet
             ORDER BY ABS(variance_pct) DESC NULLS LAST
             LIMIT 50
         """ if not selected_month else f"""
             SELECT resource_id, status, billing_month,
-                   CAST(forecast_monthly_cost AS DOUBLE) AS forecast,
-                   CAST(actual_monthly_cost AS DOUBLE) AS actual,
-                   variance_pct
+                   CAST(forecast_monthly_cost AS DOUBLE PRECISION) AS forecast,
+                   CAST(actual_monthly_cost AS DOUBLE PRECISION) AS actual,
+                   CAST(variance_pct AS DOUBLE PRECISION) AS variance_pct
             FROM dim_forecast_variance_prophet
             WHERE billing_month = '{selected_month}'
             ORDER BY ABS(variance_pct) DESC NULLS LAST
@@ -486,12 +515,15 @@ with tab_forecast:
 with tab_budget:
     st.header("Budget Management")
 
-    budget_status = _query(f"""
-        SELECT team, env, budget_amount, actual_cost, utilization_pct, status
-        FROM dim_budget_status
-        WHERE billing_month = '{selected_month}'
-        ORDER BY utilization_pct DESC
-    """ if selected_month else "SELECT 1 WHERE FALSE")
+    budget_status = _query(
+        "SELECT team, env, CAST(budget_amount AS DOUBLE PRECISION) AS budget_amount, "
+        "CAST(actual_cost AS DOUBLE PRECISION) AS actual_cost, "
+        "CAST(utilization_pct AS DOUBLE PRECISION) AS utilization_pct, status "
+        "FROM dim_budget_status "
+        "WHERE billing_month = %s "
+        "ORDER BY utilization_pct DESC",
+        [selected_month],
+    ) if selected_month else []
 
     if budget_status:
         import pandas as pd
@@ -522,7 +554,8 @@ with tab_budget:
 
     st.subheader("Budget Configuration")
     budget_config = _query(
-        "SELECT team, env, budget_amount, billing_month, updated_at "
+        "SELECT team, env, CAST(budget_amount AS DOUBLE PRECISION) AS budget_amount, "
+        "billing_month, updated_at::TEXT "
         "FROM dim_budget ORDER BY team, env"
     )
     if budget_config:
@@ -546,34 +579,34 @@ with tab_budget:
             submitted = st.form_submit_button("Save Budget")
 
         if submitted:
-            if not Path(_DUCKDB_PATH).exists():
-                st.error("DuckDB file not found. Run Dagster assets first.")
-            else:
-                try:
-                    conn = duckdb.connect(_DUCKDB_PATH)
-                    billing_month_val = new_month.strip() if new_month.strip() else None
-                    existing = conn.execute(
-                        "SELECT COUNT(*) FROM dim_budget WHERE team=? AND env=?",
-                        [new_team, new_env],
-                    ).fetchone()
-                    if existing and existing[0] > 0:
-                        conn.execute(
-                            "UPDATE dim_budget SET budget_amount=?, billing_month=?, "
-                            "updated_at=NOW() WHERE team=? AND env=?",
-                            [new_amount, billing_month_val, new_team, new_env],
-                        )
-                        st.success(f"Updated budget for {new_team}/{new_env}: ${new_amount:,.2f}")
-                    else:
-                        conn.execute(
-                            "INSERT INTO dim_budget (team, env, budget_amount, billing_month) "
-                            "VALUES (?, ?, ?, ?)",
-                            [new_team, new_env, new_amount, billing_month_val],
-                        )
-                        st.success(f"Added budget for {new_team}/{new_env}: ${new_amount:,.2f}")
-                    conn.close()
-                    st.cache_data.clear()
-                except Exception as exc:
-                    st.error(f"Failed to save: {exc}")
+            try:
+                conn = _get_conn(readonly=False)
+                cur = conn.cursor()
+                billing_month_val = new_month.strip() if new_month.strip() else None
+                cur.execute(
+                    "SELECT COUNT(*) FROM dim_budget WHERE team=%s AND env=%s",
+                    [new_team, new_env],
+                )
+                existing = cur.fetchone()
+                if existing and existing[0] > 0:
+                    cur.execute(
+                        "UPDATE dim_budget SET budget_amount=%s, billing_month=%s, "
+                        "updated_at=NOW() WHERE team=%s AND env=%s",
+                        [new_amount, billing_month_val, new_team, new_env],
+                    )
+                    st.success(f"Updated budget for {new_team}/{new_env}: ${new_amount:,.2f}")
+                else:
+                    cur.execute(
+                        "INSERT INTO dim_budget (team, env, budget_amount, billing_month) "
+                        "VALUES (%s, %s, %s, %s)",
+                        [new_team, new_env, new_amount, billing_month_val],
+                    )
+                    st.success(f"Added budget for {new_team}/{new_env}: ${new_amount:,.2f}")
+                cur.close()
+                conn.close()
+                st.cache_data.clear()
+            except Exception as exc:
+                st.error(f"Failed to save: {exc}")
 
     with st.expander("Delete Budget Entry"):
         del_entries = _query("SELECT team, env FROM dim_budget ORDER BY team, env")
@@ -584,11 +617,13 @@ with tab_budget:
             if st.button("Delete Selected Entry"):
                 del_team, del_env = del_choice.split("/", 1)
                 try:
-                    conn = duckdb.connect(_DUCKDB_PATH)
-                    conn.execute(
-                        "DELETE FROM dim_budget WHERE team=? AND env=?",
+                    conn = _get_conn(readonly=False)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "DELETE FROM dim_budget WHERE team=%s AND env=%s",
                         [del_team, del_env],
                     )
+                    cur.close()
                     conn.close()
                     st.success(f"Deleted budget entry: {del_choice}")
                     st.cache_data.clear()
@@ -604,14 +639,17 @@ with tab_chargeback:
     if not selected_month:
         st.info("No data available.")
     else:
-        cb_rows = _query(f"""
-            SELECT provider, team, product, env, cost_unit_key,
-                   CAST(actual_cost AS DOUBLE) AS actual_cost,
-                   budget_amount, utilization_pct, resource_count
-            FROM dim_chargeback
-            WHERE billing_month = '{selected_month}'
-            ORDER BY actual_cost DESC
-        """)
+        cb_rows = _query(
+            "SELECT provider, team, product, env, cost_unit_key, "
+            "CAST(actual_cost AS DOUBLE PRECISION) AS actual_cost, "
+            "CAST(budget_amount AS DOUBLE PRECISION) AS budget_amount, "
+            "CAST(utilization_pct AS DOUBLE PRECISION) AS utilization_pct, "
+            "resource_count "
+            "FROM dim_chargeback "
+            "WHERE billing_month = %s "
+            "ORDER BY actual_cost DESC",
+            [selected_month],
+        )
         if cb_rows:
             import pandas as pd
             df = pd.DataFrame(cb_rows)
@@ -640,10 +678,10 @@ with tab_chargeback:
 
 with tab_settings:
     st.header("Platform Settings")
-    st.caption("DuckDB `platform_settings` 테이블의 런타임 임계값을 조회·수정합니다.")
+    st.caption("PostgreSQL `platform_settings` 테이블의 런타임 임계값을 조회·수정합니다.")
 
     settings_rows = _query(
-        "SELECT key, value, value_type, description, updated_at "
+        "SELECT key, value, value_type, description, updated_at::TEXT "
         "FROM platform_settings ORDER BY key"
     )
 
@@ -657,7 +695,6 @@ with tab_settings:
 
         df_settings = pd.DataFrame(settings_rows)
 
-        # Active detectors 토글 UI
         st.subheader("Active Detectors")
         active_row = next(
             (r for r in settings_rows if r["key"] == "anomaly.active_detectors"), None
@@ -672,20 +709,19 @@ with tab_settings:
             )
             if st.button("탐지기 설정 저장"):
                 new_value = ",".join(selected)
-                if Path(_DUCKDB_PATH).exists():
-                    try:
-                        conn = duckdb.connect(_DUCKDB_PATH)
-                        conn.execute(
-                            "UPDATE platform_settings SET value=? WHERE key='anomaly.active_detectors'",
-                            [new_value],
-                        )
-                        conn.close()
-                        st.success(f"활성 탐지기 업데이트: {new_value}")
-                        st.cache_data.clear()
-                    except Exception as exc:
-                        st.error(f"저장 실패: {exc}")
-                else:
-                    st.error("DuckDB 파일이 없습니다.")
+                try:
+                    conn = _get_conn(readonly=False)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE platform_settings SET value=%s WHERE key='anomaly.active_detectors'",
+                        [new_value],
+                    )
+                    cur.close()
+                    conn.close()
+                    st.success(f"활성 탐지기 업데이트: {new_value}")
+                    st.cache_data.clear()
+                except Exception as exc:
+                    st.error(f"저장 실패: {exc}")
 
         st.subheader("All Settings")
         st.dataframe(df_settings, use_container_width=True)
@@ -699,30 +735,30 @@ with tab_settings:
             )
             new_val = st.text_input("새 값", value=str(current_val))
             if st.button("저장"):
-                if Path(_DUCKDB_PATH).exists():
-                    try:
-                        conn = duckdb.connect(_DUCKDB_PATH)
-                        conn.execute(
-                            "UPDATE platform_settings SET value=? WHERE key=?",
-                            [new_val, selected_key],
-                        )
-                        conn.close()
-                        st.success(f"{selected_key} = {new_val} 저장 완료")
-                        st.cache_data.clear()
-                    except Exception as exc:
-                        st.error(f"저장 실패: {exc}")
-                else:
-                    st.error("DuckDB 파일이 없습니다.")
+                try:
+                    conn = _get_conn(readonly=False)
+                    cur = conn.cursor()
+                    cur.execute(
+                        "UPDATE platform_settings SET value=%s WHERE key=%s",
+                        [new_val, selected_key],
+                    )
+                    cur.close()
+                    conn.close()
+                    st.success(f"{selected_key} = {new_val} 저장 완료")
+                    st.cache_data.clear()
+                except Exception as exc:
+                    st.error(f"저장 실패: {exc}")
 
-    # Recommendations 탭
     st.subheader("Cost Recommendations")
-    rec_rows = _query(f"""
-        SELECT resource_id, team, env, provider,
-               recommendation_type, reason, estimated_savings, severity
-        FROM dim_cost_recommendations
-        WHERE billing_month = '{selected_month}'
-        ORDER BY severity DESC, estimated_savings DESC NULLS LAST
-    """ if selected_month else "SELECT 1 WHERE FALSE")
+    rec_rows = _query(
+        "SELECT resource_id, team, env, provider, "
+        "recommendation_type, reason, "
+        "CAST(estimated_savings AS DOUBLE PRECISION) AS estimated_savings, severity "
+        "FROM dim_cost_recommendations "
+        "WHERE billing_month = %s "
+        "ORDER BY severity DESC, estimated_savings DESC NULLS LAST",
+        [selected_month],
+    ) if selected_month else []
 
     if rec_rows:
         import pandas as pd

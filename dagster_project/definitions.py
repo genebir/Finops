@@ -71,19 +71,13 @@ defs = Definitions(
             warehouse_path=_cfg.data.warehouse_path,
             catalog_db_path=_cfg.data.catalog_db_path,
         ),
-        "duckdb_resource": DuckDBResource(
-            db_path=_cfg.data.duckdb_path,
-        ),
+        "duckdb_resource": DuckDBResource(),
         "infracost_cli": InfracostCliResource(
             terraform_path=_cfg.infracost.terraform_path,
             infracost_binary=_cfg.infracost.binary,
             subprocess_timeout_sec=_cfg.infracost.subprocess_timeout_sec,
         ),
-        "settings_store": SettingsStoreResource(
-            db_path=_cfg.data.duckdb_path,
-        ),
-        "budget_store": BudgetStoreResource(
-            db_path=_cfg.data.duckdb_path,
-        ),
+        "settings_store": SettingsStoreResource(),
+        "budget_store": BudgetStoreResource(),
     },
 )

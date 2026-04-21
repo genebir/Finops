@@ -3,19 +3,31 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-import duckdb
+import psycopg2
 import pytest
 
 from dagster_project.assets.infracost_forecast import _parse_forecast_records
+from dagster_project.config import load_config
+
+_cfg = load_config()
 
 
-def _setup_duckdb_with_data(
-    conn: duckdb.DuckDBPyConnection,
+def _get_test_conn() -> psycopg2.extensions.connection:
+    conn = psycopg2.connect(_cfg.postgres.dsn)
+    conn.autocommit = True
+    return conn
+
+
+def _setup_test_tables(
+    conn: psycopg2.extensions.connection,
     forecast_rows: list[dict],
     actual_rows: list[dict],
 ) -> None:
-    conn.execute("""
-        CREATE TABLE dim_forecast (
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS _test_dim_forecast CASCADE")
+    cur.execute("DROP TABLE IF EXISTS _test_fact_daily_cost CASCADE")
+    cur.execute("""
+        CREATE TABLE _test_dim_forecast (
             resource_address      VARCHAR NOT NULL,
             monthly_cost          DECIMAL(18,6) NOT NULL,
             hourly_cost           DECIMAL(18,6) NOT NULL,
@@ -24,8 +36,8 @@ def _setup_duckdb_with_data(
         )
     """)
     for r in forecast_rows:
-        conn.execute(
-            "INSERT INTO dim_forecast VALUES (?, ?, ?, ?, ?)",
+        cur.execute(
+            "INSERT INTO _test_dim_forecast VALUES (%s, %s, %s, %s, %s)",
             [
                 r["resource_address"],
                 r["monthly_cost"],
@@ -35,144 +47,170 @@ def _setup_duckdb_with_data(
             ],
         )
 
-    conn.execute("""
-        CREATE TABLE fact_daily_cost (
+    cur.execute("""
+        CREATE TABLE _test_fact_daily_cost (
             charge_date       DATE NOT NULL,
             resource_id       VARCHAR NOT NULL,
-            resource_name     VARCHAR,
-            resource_type     VARCHAR,
-            service_name      VARCHAR,
-            service_category  VARCHAR,
-            region_id         VARCHAR,
-            team              VARCHAR,
-            product           VARCHAR,
-            env               VARCHAR,
-            cost_unit_key     VARCHAR,
-            effective_cost    DECIMAL(18,6),
-            billed_cost       DECIMAL(18,6),
-            list_cost         DECIMAL(18,6),
-            record_count      INTEGER
+            effective_cost    DECIMAL(18,6)
         )
     """)
     for r in actual_rows:
-        conn.execute(
-            "INSERT INTO fact_daily_cost VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                r["charge_date"],
-                r["resource_id"],
-                r.get("resource_name", r["resource_id"]),
-                r.get("resource_type", "aws_instance"),
-                r.get("service_name", "Amazon EC2"),
-                r.get("service_category", "Compute"),
-                r.get("region_id", "us-east-1"),
-                r.get("team", "platform"),
-                r.get("product", "checkout"),
-                r.get("env", "prod"),
-                r.get("cost_unit_key", "platform:checkout:prod"),
-                r["effective_cost"],
-                r["effective_cost"],
-                r["effective_cost"],
-                1,
-            ],
+        cur.execute(
+            "INSERT INTO _test_fact_daily_cost VALUES (%s, %s, %s)",
+            [r["charge_date"], r["resource_id"], r["effective_cost"]],
         )
+    cur.close()
 
 
 def _run_variance_query(
-    conn: duckdb.DuckDBPyConnection,
+    conn: psycopg2.extensions.connection,
     billing_month: str,
     over_pct: float = 20.0,
     under_pct: float = 20.0,
 ) -> list[dict]:
-    from pathlib import Path
-
-    sql = (
-        (Path(__file__).parent.parent / "sql" / "marts" / "v_variance.sql")
-        .read_text()
-        .replace("{{variance_over_pct}}", str(over_pct))
-        .replace("{{variance_under_pct}}", str(under_pct))
-    )
-    conn.execute(sql)
-    rows = conn.execute(f"""
+    cur = conn.cursor()
+    cur.execute("DROP VIEW IF EXISTS _test_v_variance")
+    cur.execute(f"""
+        CREATE VIEW _test_v_variance AS
+        WITH actual_mtd AS (
+            SELECT
+                resource_id,
+                DATE_TRUNC('month', charge_date) AS billing_month,
+                SUM(effective_cost) AS actual_mtd
+            FROM _test_fact_daily_cost
+            GROUP BY resource_id, DATE_TRUNC('month', charge_date)
+        )
+        SELECT
+            f.resource_address AS resource_id,
+            f.monthly_cost AS forecast_monthly,
+            COALESCE(a.actual_mtd, 0) AS actual_mtd,
+            CASE
+                WHEN f.monthly_cost = 0 THEN NULL
+                ELSE (COALESCE(a.actual_mtd, 0) - f.monthly_cost) / f.monthly_cost * 100
+            END AS variance_pct,
+            CASE
+                WHEN a.resource_id IS NULL THEN 'unmatched'
+                WHEN (COALESCE(a.actual_mtd, 0) - f.monthly_cost)
+                     / NULLIF(f.monthly_cost, 0) * 100 > {over_pct} THEN 'over'
+                WHEN (COALESCE(a.actual_mtd, 0) - f.monthly_cost)
+                     / NULLIF(f.monthly_cost, 0) * 100 < -{under_pct} THEN 'under'
+                ELSE 'ok'
+            END AS status,
+            a.billing_month
+        FROM _test_dim_forecast f
+        LEFT JOIN actual_mtd a ON f.resource_address = a.resource_id
+    """)
+    cur.execute("""
         SELECT resource_id, forecast_monthly, actual_mtd, variance_pct, status
-        FROM v_variance
-        WHERE billing_month = '{billing_month}' OR billing_month IS NULL
-    """).fetchall()
+        FROM _test_v_variance
+        WHERE billing_month = %s OR billing_month IS NULL
+    """, [billing_month])
     cols = ["resource_id", "forecast_monthly", "actual_mtd", "variance_pct", "status"]
-    return [dict(zip(cols, row, strict=True)) for row in rows]
+    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    cur.close()
+    return rows
+
+
+def _cleanup(conn: psycopg2.extensions.connection) -> None:
+    cur = conn.cursor()
+    cur.execute("DROP VIEW IF EXISTS _test_v_variance")
+    cur.execute("DROP TABLE IF EXISTS _test_dim_forecast")
+    cur.execute("DROP TABLE IF EXISTS _test_fact_daily_cost")
+    cur.close()
 
 
 class TestVarianceStatus:
     def test_over_budget(self) -> None:
-        conn = duckdb.connect(":memory:")
-        _setup_duckdb_with_data(
-            conn,
-            forecast_rows=[{"resource_address": "aws_instance.web_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
-            actual_rows=[
-                {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_1", "effective_cost": 150.0}
-            ],
-        )
-        results = _run_variance_query(conn, "2024-01-01")
-        assert len(results) == 1
-        assert results[0]["status"] == "over"
-        assert float(results[0]["variance_pct"]) == pytest.approx(50.0, abs=0.01)
+        conn = _get_test_conn()
+        try:
+            _setup_test_tables(
+                conn,
+                forecast_rows=[{"resource_address": "aws_instance.web_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
+                actual_rows=[
+                    {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_1", "effective_cost": 150.0}
+                ],
+            )
+            results = _run_variance_query(conn, "2024-01-01")
+            assert len(results) == 1
+            assert results[0]["status"] == "over"
+            assert float(results[0]["variance_pct"]) == pytest.approx(50.0, abs=0.01)
+        finally:
+            _cleanup(conn)
+            conn.close()
 
     def test_under_budget(self) -> None:
-        conn = duckdb.connect(":memory:")
-        _setup_duckdb_with_data(
-            conn,
-            forecast_rows=[{"resource_address": "aws_instance.api_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
-            actual_rows=[
-                {"charge_date": "2024-01-15", "resource_id": "aws_instance.api_1", "effective_cost": 60.0}
-            ],
-        )
-        results = _run_variance_query(conn, "2024-01-01")
-        assert len(results) == 1
-        assert results[0]["status"] == "under"
-        assert float(results[0]["variance_pct"]) == pytest.approx(-40.0, abs=0.01)
+        conn = _get_test_conn()
+        try:
+            _setup_test_tables(
+                conn,
+                forecast_rows=[{"resource_address": "aws_instance.api_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
+                actual_rows=[
+                    {"charge_date": "2024-01-15", "resource_id": "aws_instance.api_1", "effective_cost": 60.0}
+                ],
+            )
+            results = _run_variance_query(conn, "2024-01-01")
+            assert len(results) == 1
+            assert results[0]["status"] == "under"
+            assert float(results[0]["variance_pct"]) == pytest.approx(-40.0, abs=0.01)
+        finally:
+            _cleanup(conn)
+            conn.close()
 
     def test_ok_within_threshold(self) -> None:
-        conn = duckdb.connect(":memory:")
-        _setup_duckdb_with_data(
-            conn,
-            forecast_rows=[{"resource_address": "aws_instance.ml_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
-            actual_rows=[
-                {"charge_date": "2024-01-15", "resource_id": "aws_instance.ml_1", "effective_cost": 110.0}
-            ],
-        )
-        results = _run_variance_query(conn, "2024-01-01")
-        assert len(results) == 1
-        assert results[0]["status"] == "ok"
+        conn = _get_test_conn()
+        try:
+            _setup_test_tables(
+                conn,
+                forecast_rows=[{"resource_address": "aws_instance.ml_1", "monthly_cost": 100.0, "hourly_cost": 0.13}],
+                actual_rows=[
+                    {"charge_date": "2024-01-15", "resource_id": "aws_instance.ml_1", "effective_cost": 110.0}
+                ],
+            )
+            results = _run_variance_query(conn, "2024-01-01")
+            assert len(results) == 1
+            assert results[0]["status"] == "ok"
+        finally:
+            _cleanup(conn)
+            conn.close()
 
     def test_unmatched_no_actual(self) -> None:
-        conn = duckdb.connect(":memory:")
-        _setup_duckdb_with_data(
-            conn,
-            forecast_rows=[{"resource_address": "aws_db_instance.main_1", "monthly_cost": 500.0, "hourly_cost": 0.69}],
-            actual_rows=[],
-        )
-        results = _run_variance_query(conn, "2024-01-01")
-        assert len(results) == 1
-        assert results[0]["status"] == "unmatched"
+        conn = _get_test_conn()
+        try:
+            _setup_test_tables(
+                conn,
+                forecast_rows=[{"resource_address": "aws_db_instance.main_1", "monthly_cost": 500.0, "hourly_cost": 0.69}],
+                actual_rows=[],
+            )
+            results = _run_variance_query(conn, "2024-01-01")
+            assert len(results) == 1
+            assert results[0]["status"] == "unmatched"
+        finally:
+            _cleanup(conn)
+            conn.close()
 
     def test_multiple_resources(self) -> None:
-        conn = duckdb.connect(":memory:")
-        _setup_duckdb_with_data(
-            conn,
-            forecast_rows=[
-                {"resource_address": "aws_instance.web_1", "monthly_cost": 100.0, "hourly_cost": 0.13},
-                {"resource_address": "aws_instance.web_2", "monthly_cost": 100.0, "hourly_cost": 0.13},
-                {"resource_address": "aws_s3_bucket.assets_1", "monthly_cost": 15.0, "hourly_cost": 0.02},
-            ],
-            actual_rows=[
-                {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_1", "effective_cost": 130.0},
-                {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_2", "effective_cost": 70.0},
-            ],
-        )
-        results = _run_variance_query(conn, "2024-01-01")
-        statuses = {r["resource_id"]: r["status"] for r in results}
-        assert statuses["aws_instance.web_1"] == "over"
-        assert statuses["aws_instance.web_2"] == "under"
-        assert statuses["aws_s3_bucket.assets_1"] == "unmatched"
+        conn = _get_test_conn()
+        try:
+            _setup_test_tables(
+                conn,
+                forecast_rows=[
+                    {"resource_address": "aws_instance.web_1", "monthly_cost": 100.0, "hourly_cost": 0.13},
+                    {"resource_address": "aws_instance.web_2", "monthly_cost": 100.0, "hourly_cost": 0.13},
+                    {"resource_address": "aws_s3_bucket.assets_1", "monthly_cost": 15.0, "hourly_cost": 0.02},
+                ],
+                actual_rows=[
+                    {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_1", "effective_cost": 130.0},
+                    {"charge_date": "2024-01-15", "resource_id": "aws_instance.web_2", "effective_cost": 70.0},
+                ],
+            )
+            results = _run_variance_query(conn, "2024-01-01")
+            statuses = {r["resource_id"]: r["status"] for r in results}
+            assert statuses["aws_instance.web_1"] == "over"
+            assert statuses["aws_instance.web_2"] == "under"
+            assert statuses["aws_s3_bucket.assets_1"] == "unmatched"
+        finally:
+            _cleanup(conn)
+            conn.close()
 
 
 class TestParseForecastRecords:

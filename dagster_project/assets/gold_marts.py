@@ -1,4 +1,4 @@
-"""Gold Mart Asset — DuckDB로 Silver → fact/dim/view 생성 (AWS)."""
+"""Gold Mart Asset — PostgreSQL로 Silver → fact/dim/view 생성 (AWS)."""
 
 
 from pathlib import Path
@@ -15,44 +15,87 @@ from .raw_cur import MONTHLY_PARTITIONS
 _SQL_DIR = Path(__file__).parent.parent.parent / "sql" / "marts"
 _cfg = load_config()
 
-_INSERT_FACT_SQL = """
-INSERT INTO fact_daily_cost (
-    provider, charge_date, resource_id, resource_name, resource_type,
-    service_name, service_category, region_id,
-    team, product, env, cost_unit_key,
-    effective_cost, billed_cost, list_cost, record_count
-)
-SELECT
-    '{provider}' AS provider,
-    CAST(strftime(ChargePeriodStart, '%Y-%m-%d') AS DATE) AS charge_date,
-    ResourceId                                             AS resource_id,
-    ResourceName                                           AS resource_name,
-    ResourceType                                           AS resource_type,
-    ServiceName                                            AS service_name,
-    ServiceCategory                                        AS service_category,
-    RegionId                                               AS region_id,
-    team,
-    product,
-    env,
-    cost_unit_key,
-    SUM(CAST(EffectiveCost AS DECIMAL(18, 6)))             AS effective_cost,
-    SUM(CAST(BilledCost AS DECIMAL(18, 6)))                AS billed_cost,
-    SUM(CAST(ListCost AS DECIMAL(18, 6)))                  AS list_cost,
-    COUNT(*)                                               AS record_count
-FROM {silver_view}
-GROUP BY
-    charge_date, resource_id, resource_name, resource_type,
-    service_name, service_category, region_id,
-    team, product, env, cost_unit_key
-ORDER BY charge_date, effective_cost DESC
-"""
+_FACT_COLUMNS = [
+    "provider", "charge_date", "resource_id", "resource_name", "resource_type",
+    "service_name", "service_category", "region_id",
+    "team", "product", "env", "cost_unit_key",
+    "effective_cost", "billed_cost", "list_cost", "record_count",
+]
+
+
+def _insert_fact_from_silver(
+    conn: object, df: pl.DataFrame, provider: str
+) -> int:
+    """Silver DataFrame을 fact_daily_cost에 bulk insert한다."""
+    import psycopg2.extras
+
+    agg = df.group_by(
+        "ChargePeriodStart", "ResourceId", "ResourceName", "ResourceType",
+        "ServiceName", "ServiceCategory", "RegionId",
+        "team", "product", "env", "cost_unit_key",
+    ).agg(
+        pl.col("EffectiveCost").cast(pl.Float64).sum().alias("effective_cost"),
+        pl.col("BilledCost").cast(pl.Float64).sum().alias("billed_cost"),
+        pl.col("ListCost").cast(pl.Float64).sum().alias("list_cost"),
+        pl.len().alias("record_count"),
+    ).sort("ChargePeriodStart", "effective_cost", descending=[False, True])
+
+    if agg.is_empty():
+        return 0
+
+    rows = [
+        (
+            provider,
+            row["ChargePeriodStart"].date() if hasattr(row["ChargePeriodStart"], "date") else row["ChargePeriodStart"],
+            row["ResourceId"],
+            row["ResourceName"],
+            row["ResourceType"],
+            row["ServiceName"],
+            row["ServiceCategory"],
+            row["RegionId"],
+            row["team"],
+            row["product"],
+            row["env"],
+            row["cost_unit_key"],
+            row["effective_cost"],
+            row["billed_cost"],
+            row["list_cost"],
+            row["record_count"],
+        )
+        for row in agg.iter_rows(named=True)
+    ]
+
+    insert_sql = (
+        "INSERT INTO fact_daily_cost ("
+        + ", ".join(_FACT_COLUMNS)
+        + ") VALUES %s"
+    )
+    cur = conn.cursor()  # type: ignore[union-attr]
+    psycopg2.extras.execute_values(cur, insert_sql, rows, page_size=500)
+    cur.close()
+    return len(rows)
+
+
+def _rebuild_dim_cost_unit(conn: object) -> None:
+    """dim_cost_unit을 fact_daily_cost에서 재생성한다."""
+    cur = conn.cursor()  # type: ignore[union-attr]
+    cur.execute("DELETE FROM dim_cost_unit")
+    cur.execute("""
+        INSERT INTO dim_cost_unit (cost_unit_key, team, product, env, resource_count)
+        SELECT cost_unit_key, team, product, env,
+               COUNT(DISTINCT resource_id)
+        FROM fact_daily_cost
+        GROUP BY cost_unit_key, team, product, env
+        ORDER BY cost_unit_key
+    """)
+    cur.close()
 
 
 @asset(
     partitions_def=MONTHLY_PARTITIONS,
     deps=["silver_focus"],
     description=(
-        "AWS Silver Iceberg 테이블을 DuckDB로 읽어 fact_daily_cost(provider='aws'), "
+        "AWS Silver Iceberg 테이블을 PostgreSQL로 읽어 fact_daily_cost(provider='aws'), "
         "dim_cost_unit, v_top_resources_30d, v_top_cost_units_30d 마트를 생성한다."
     ),
     group_name="gold",
@@ -63,11 +106,7 @@ def gold_marts(
     duckdb_resource: DuckDBResource,
     settings_store: SettingsStoreResource,
 ) -> None:
-    """Silver → Gold 집계 마트 생성 (AWS).
-
-    fact_daily_cost는 provider 컬럼으로 멀티 클라우드 데이터를 단일 테이블에 관리한다.
-    파티션 키별 DELETE + INSERT로 멱등성을 보장한다.
-    """
+    """Silver → Gold 집계 마트 생성 (AWS)."""
     silver_table = iceberg_catalog.load_table("focus.silver_focus")
     df: pl.DataFrame = silver_table.scan().to_polars()
 
@@ -90,56 +129,53 @@ def gold_marts(
     )
 
     with duckdb_resource.get_connection() as conn:
-        conn.register("silver_focus", df.to_arrow())
+        cur = conn.cursor()
 
-        # CREATE TABLE IF NOT EXISTS (멀티 클라우드 통합 테이블)
-        fact_ddl = (_SQL_DIR / "fact_daily_cost.sql").read_text()
-        conn.execute(fact_ddl)
-        # 기존 테이블에 provider 컬럼이 없으면 추가 (마이그레이션)
-        conn.execute(
-            "ALTER TABLE fact_daily_cost ADD COLUMN IF NOT EXISTS provider VARCHAR DEFAULT 'aws'"
-        )
-
-        # 이 파티션의 AWS 데이터만 교체
-        conn.execute(
-            "DELETE FROM fact_daily_cost WHERE provider = 'aws' AND STRFTIME(charge_date, '%Y-%m') = ?",
+        cur.execute(
+            "DELETE FROM fact_daily_cost WHERE provider = 'aws' AND to_char(charge_date, 'YYYY-MM') = %s",
             [month_str],
         )
-        conn.execute(_INSERT_FACT_SQL.format(provider="aws", silver_view="silver_focus"))
-        row_count = conn.execute(
-            "SELECT COUNT(*) FROM fact_daily_cost WHERE provider = 'aws' AND STRFTIME(charge_date, '%Y-%m') = ?",
-            [month_str],
-        ).fetchone()
-        context.log.info(f"fact_daily_cost (aws/{month_str}): {row_count[0] if row_count else 0}행")
 
-        # dim_cost_unit: 전체 데이터에서 재생성
-        dim_sql = (_SQL_DIR / "dim_cost_unit.sql").read_text()
-        conn.execute(dim_sql)
+        row_count = _insert_fact_from_silver(conn, df, "aws")
+        context.log.info(f"fact_daily_cost (aws/{month_str}): {row_count}행")
+
+        _rebuild_dim_cost_unit(conn)
         context.log.info("Rebuilt dim_cost_unit")
 
-        top_res_sql = (
-            (_SQL_DIR / "v_top_resources_30d.sql")
-            .read_text()
-            .replace("{{lookback_days}}", str(lookback_days))
-            .replace("{{top_resources_limit}}", str(top_resources_limit))
-        )
-        conn.execute(top_res_sql)
+        cur.execute("DROP VIEW IF EXISTS v_top_resources_30d")
+        cur.execute(f"""
+            CREATE VIEW v_top_resources_30d AS
+            SELECT
+                resource_id, resource_name, resource_type,
+                service_name, service_category, region_id,
+                cost_unit_key, team, product, env,
+                SUM(effective_cost) AS total_effective_cost,
+                SUM(billed_cost) AS total_billed_cost,
+                COUNT(DISTINCT charge_date) AS active_days
+            FROM fact_daily_cost
+            WHERE charge_date >= CURRENT_DATE - INTERVAL '{lookback_days} days'
+            GROUP BY resource_id, resource_name, resource_type,
+                     service_name, service_category, region_id,
+                     cost_unit_key, team, product, env
+            ORDER BY total_effective_cost DESC
+            LIMIT {top_resources_limit}
+        """)
         context.log.info("Rebuilt v_top_resources_30d")
 
-        conn.execute(f"""
-            CREATE OR REPLACE VIEW v_top_cost_units_30d AS
+        cur.execute("DROP VIEW IF EXISTS v_top_cost_units_30d")
+        cur.execute(f"""
+            CREATE VIEW v_top_cost_units_30d AS
             SELECT
-                cost_unit_key,
-                team,
-                product,
-                env,
+                cost_unit_key, team, product, env,
                 SUM(effective_cost) AS total_effective_cost,
                 COUNT(DISTINCT resource_id) AS resource_count,
                 COUNT(DISTINCT charge_date) AS active_days
             FROM fact_daily_cost
-            WHERE charge_date >= CURRENT_DATE - INTERVAL {lookback_days} DAY
+            WHERE charge_date >= CURRENT_DATE - INTERVAL '{lookback_days} days'
             GROUP BY cost_unit_key, team, product, env
             ORDER BY total_effective_cost DESC
             LIMIT {top_cost_units_limit}
         """)
         context.log.info("Rebuilt v_top_cost_units_30d")
+
+        cur.close()

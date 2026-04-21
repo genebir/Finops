@@ -1,4 +1,6 @@
-CREATE OR REPLACE TABLE dim_cost_unit AS
+-- PostgreSQL: DELETE + INSERT pattern (CREATE OR REPLACE TABLE not supported)
+DELETE FROM dim_cost_unit;
+INSERT INTO dim_cost_unit (cost_unit_key, team, product, env, resource_count)
 SELECT DISTINCT
     cost_unit_key,
     team,

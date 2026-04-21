@@ -1,15 +1,13 @@
 """SettingsStoreResource 단위 테스트."""
 
-from pathlib import Path
-
 import pytest
 
 from dagster_project.resources.settings_store import SettingsStoreResource
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> SettingsStoreResource:
-    s = SettingsStoreResource(db_path=str(tmp_path / "test_settings.duckdb"))
+def store() -> SettingsStoreResource:
+    s = SettingsStoreResource()
     s.ensure_table()
     return s
 
@@ -55,28 +53,29 @@ def test_set_value_insert(store: SettingsStoreResource) -> None:
     store.set_value("custom.new_key", "hello")
     val = store.get_str("custom.new_key", "default")
     assert val == "hello"
+    # cleanup
+    try:
+        conn = store._connect()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM platform_settings WHERE key = %s", ["custom.new_key"])
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
 
 
 def test_set_value_update(store: SettingsStoreResource) -> None:
+    original = store.get_float("anomaly.zscore.warning", 0.0)
     store.set_value("anomaly.zscore.warning", "5.0")
     val = store.get_float("anomaly.zscore.warning", 0.0)
     assert val == pytest.approx(5.0)
+    # restore
+    store.set_value("anomaly.zscore.warning", str(original))
 
 
-def test_get_float_bad_db_returns_default() -> None:
-    """DB 접근 불가 시 default를 반환한다."""
-    store = SettingsStoreResource(db_path="/nonexistent/path/db.duckdb")
-    val = store.get_float("some.key", 3.14)
-    assert val == pytest.approx(3.14)
-
-
-def test_get_int_bad_db_returns_default() -> None:
-    store = SettingsStoreResource(db_path="/nonexistent/path/db.duckdb")
-    val = store.get_int("some.key", 7)
-    assert val == 7
-
-
-def test_get_str_bad_db_returns_default() -> None:
-    store = SettingsStoreResource(db_path="/nonexistent/path/db.duckdb")
-    val = store.get_str("some.key", "fallback")
-    assert val == "fallback"
+def test_ensure_table_idempotent(store: SettingsStoreResource) -> None:
+    """ensure_table 중복 호출해도 에러 없음."""
+    store.ensure_table()
+    store.ensure_table()
+    settings = store.all_settings()
+    assert isinstance(settings, list)

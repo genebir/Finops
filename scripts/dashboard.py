@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import argparse
 from datetime import date
 
-from rich.columns import Columns
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -45,18 +44,24 @@ def _provider_summary(duckdb: DuckDBResource, month_str: str) -> Table:
     table.add_column("Avg Daily ($)", justify="right")
 
     with duckdb.get_connection() as conn:
-        rows = conn.execute(f"""
+        cur = conn.cursor()
+        cur.execute(
+            """
             SELECT
                 provider,
                 COUNT(DISTINCT resource_id)      AS resources,
-                SUM(effective_cost)              AS total_cost,
-                SUM(effective_cost)
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS total_cost,
+                SUM(CAST(effective_cost AS DOUBLE PRECISION))
                     / NULLIF(COUNT(DISTINCT charge_date), 0) AS avg_daily
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+            WHERE to_char(charge_date, 'YYYY-MM') = %s
             GROUP BY provider
             ORDER BY total_cost DESC
-        """).fetchall()
+            """,
+            [month_str],
+        )
+        rows = cur.fetchall()
+        cur.close()
 
     if not rows:
         table.add_row("[dim]데이터 없음[/dim]", "", "", "")
@@ -81,19 +86,25 @@ def _top_resources(duckdb: DuckDBResource, month_str: str, limit: int = 10) -> T
     table.add_column("Cost ($)", justify="right", style="yellow bold")
 
     with duckdb.get_connection() as conn:
-        rows = conn.execute(f"""
+        cur = conn.cursor()
+        cur.execute(
+            """
             SELECT
                 resource_id,
                 provider,
                 service_name,
                 team,
-                SUM(effective_cost) AS total_cost
+                SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS total_cost
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+            WHERE to_char(charge_date, 'YYYY-MM') = %s
             GROUP BY resource_id, provider, service_name, team
             ORDER BY total_cost DESC
-            LIMIT {limit}
-        """).fetchall()
+            LIMIT %s
+            """,
+            [month_str, limit],
+        )
+        rows = cur.fetchall()
+        cur.close()
 
     if not rows:
         table.add_row("", "[dim]데이터 없음[/dim]", "", "", "", "")
@@ -121,29 +132,36 @@ def _anomaly_summary(duckdb: DuckDBResource, month_str: str, limit: int = 10) ->
     table.add_column("Z-Score", justify="right")
 
     with duckdb.get_connection() as conn:
-        exists = conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name = 'anomaly_scores'"
-        ).fetchall()
-        if not exists:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='anomaly_scores'"
+        )
+        if not cur.fetchone():
+            cur.close()
             table.add_row("[dim]anomaly_scores 없음[/dim]", "", "", "", "", "", "")
             return table
 
-        rows = conn.execute(f"""
+        cur.execute(
+            """
             SELECT
                 severity,
                 detector_name,
                 resource_id,
-                charge_date,
-                effective_cost,
-                mean_cost,
-                z_score
+                charge_date::TEXT,
+                CAST(effective_cost AS DOUBLE PRECISION),
+                CAST(mean_cost AS DOUBLE PRECISION),
+                CAST(z_score AS DOUBLE PRECISION)
             FROM anomaly_scores
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+            WHERE to_char(charge_date, 'YYYY-MM') = %s
             ORDER BY
                 CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
                 ABS(z_score) DESC
-            LIMIT {limit}
-        """).fetchall()
+            LIMIT %s
+            """,
+            [month_str, limit],
+        )
+        rows = cur.fetchall()
+        cur.close()
 
     if not rows:
         table.add_row("[dim]이상치 없음[/dim]", "", "", "", "", "", "")
@@ -176,25 +194,32 @@ def _prophet_forecast_summary(duckdb: DuckDBResource, limit: int = 8) -> Table:
     table.add_column("Status")
 
     with duckdb.get_connection() as conn:
-        exists = conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name = 'dim_forecast_variance_prophet'"
-        ).fetchall()
-        if not exists:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='dim_forecast_variance_prophet'"
+        )
+        if not cur.fetchone():
+            cur.close()
             table.add_row("[dim]dim_forecast_variance_prophet 없음[/dim]", "", "", "", "", "")
             return table
 
-        rows = conn.execute(f"""
+        cur.execute(
+            """
             SELECT
                 resource_id,
-                predicted_monthly_cost,
-                lower_bound_monthly_cost,
-                upper_bound_monthly_cost,
-                actual_monthly_cost,
+                CAST(predicted_monthly_cost AS DOUBLE PRECISION),
+                CAST(lower_bound_monthly_cost AS DOUBLE PRECISION),
+                CAST(upper_bound_monthly_cost AS DOUBLE PRECISION),
+                CAST(actual_monthly_cost AS DOUBLE PRECISION),
                 status
             FROM dim_forecast_variance_prophet
             ORDER BY predicted_monthly_cost DESC
-            LIMIT {limit}
-        """).fetchall()
+            LIMIT %s
+            """,
+            [limit],
+        )
+        rows = cur.fetchall()
+        cur.close()
 
     if not rows:
         table.add_row("[dim]예측 데이터 없음[/dim]", "", "", "", "", "")
@@ -222,14 +247,16 @@ def main() -> None:
     args = _parse_args()
     month_str = args.month
 
-    duckdb = DuckDBResource(db_path=_cfg.data.duckdb_path)
+    duckdb = DuckDBResource()
 
     console.rule(f"[bold cyan]FinOps Dashboard[/bold cyan]  [{month_str}]")
     console.print()
 
     try:
         with duckdb.get_connection() as conn:
-            conn.execute("SELECT 1 FROM fact_daily_cost LIMIT 1")
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM fact_daily_cost LIMIT 1")
+            cur.close()
         has_data = True
     except Exception:
         has_data = False

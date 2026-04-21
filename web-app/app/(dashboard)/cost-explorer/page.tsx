@@ -1,22 +1,25 @@
 import PageHeader from "@/components/layout/PageHeader";
 import { ErrorState } from "@/components/primitives/States";
 import { api } from "@/lib/api";
+
 import CostExplorerClient from "./CostExplorerClient";
 
 export default async function CostExplorerPage() {
-  let data;
-  try { data = await api.overview(); }
+  let filters;
+  try { filters = await api.filters(); }
   catch (e) { return <ErrorState message={String(e)} />; }
 
-  const teams = data.cost_by_team.map((t) => t.team);
-
   return (
-    <div style={{ maxWidth: "1100px" }}>
+    <div style={{ maxWidth: "1200px" }}>
       <PageHeader
         title="Cost Explorer"
-        description={`${data.period_start} – ${data.period_end}`}
+        description={
+          filters.date_min && filters.date_max
+            ? `${filters.date_min} – ${filters.date_max}`
+            : "Explore costs across teams, services, providers, and time."
+        }
       />
-      <CostExplorerClient teams={teams} />
+      <CostExplorerClient filters={filters} />
     </div>
   );
 }

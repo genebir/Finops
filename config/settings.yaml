@@ -8,6 +8,13 @@ data:
   duckdb_path: "data/marts.duckdb"
   reports_dir: "data/reports"
 
+postgres:
+  host: "localhost"
+  port: 5432
+  dbname: "finops"
+  user: "finops_app"
+  password: "finops_secret_2026"
+
 dagster:
   partition_start_date: "2024-01-01"
 

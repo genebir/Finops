@@ -7,6 +7,8 @@ import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/formatters";
 import type { BudgetItem } from "@/lib/types";
 
+import BudgetManager from "./BudgetManager";
+
 function BudgetGauge({ usedPct, status }: { usedPct: number; status: string }) {
   const colorMap: Record<string, string> = {
     over: "var(--status-critical)",
@@ -50,21 +52,24 @@ function BudgetGauge({ usedPct, status }: { usedPct: number; status: string }) {
 }
 
 export default async function BudgetPage() {
-  let data;
-  try { data = await api.budget(); }
-  catch (e) { return <ErrorState message={String(e)} />; }
+  let data, filters;
+  try {
+    [data, filters] = await Promise.all([api.budget(), api.filters()]);
+  } catch (e) {
+    return <ErrorState message={String(e)} />;
+  }
 
   const overCount = data.items.filter((i) => i.status === "over").length;
   const hasBudget = data.total_budget > 0;
 
   return (
-    <div style={{ maxWidth: "1000px" }}>
+    <div style={{ maxWidth: "1100px" }}>
       <PageHeader
         title="Budget"
         description={
           hasBudget
             ? `Total budget ${formatCurrency(data.total_budget)}`
-            : "Run the budget_alerts asset in Dagster to populate budget data."
+            : "Add budget entries below or run the budget_alerts asset in Dagster."
         }
       />
 
@@ -91,83 +96,87 @@ export default async function BudgetPage() {
         />
       </div>
 
-      <Card>
-        <CardHeader>Budget Status by Team</CardHeader>
-        {data.items.length === 0 ? (
-          <EmptyState
-            title="No budget data"
-            description="Run the budget_alerts asset in Dagster."
-          />
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                {["Team", "Env", "Budget", "Actual", "Usage", "Status"].map((h) => (
-                  <th
-                    key={h}
+      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+        <Card>
+          <CardHeader>Budget Status by Team</CardHeader>
+          {data.items.length === 0 ? (
+            <EmptyState
+              title="No budget status yet"
+              description="Add budget entries below, then run budget_alerts in Dagster to compute status."
+            />
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Team", "Env", "Budget", "Actual", "Usage", "Status"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: ["Budget", "Actual"].includes(h) ? "right" : "left",
+                        fontSize: "10px",
+                        fontWeight: 600,
+                        fontFamily: "Inter, sans-serif",
+                        color: "var(--text-tertiary)",
+                        letterSpacing: "0.07em",
+                        textTransform: "uppercase",
+                        paddingBottom: "12px",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item: BudgetItem, i: number) => (
+                  <tr
+                    key={i}
                     style={{
-                      textAlign: ["Budget", "Actual"].includes(h) ? "right" : "left",
-                      fontSize: "10px",
-                      fontWeight: 600,
-                      fontFamily: "Inter, sans-serif",
-                      color: "var(--text-tertiary)",
-                      letterSpacing: "0.07em",
-                      textTransform: "uppercase",
-                      paddingBottom: "12px",
-                      borderBottom: "1px solid var(--border)",
+                      borderBottom: i < data.items.length - 1 ? "1px solid var(--border)" : "none",
                     }}
                   >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.items.map((item: BudgetItem, i: number) => (
-                <tr
-                  key={i}
-                  style={{
-                    borderBottom: i < data.items.length - 1 ? "1px solid var(--border)" : "none",
-                  }}
-                >
-                  <td style={{ padding: "12px 0", fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>
-                    {item.team}
-                  </td>
-                  <td style={{ padding: "12px 8px" }}>
-                    <SeverityBadge severity={item.env} />
-                  </td>
-                  <td style={{ padding: "12px 8px", textAlign: "right" }}>
-                    <span className="font-mono" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                    <td style={{ padding: "12px 0", fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>
+                      {item.team}
+                    </td>
+                    <td style={{ padding: "12px 8px" }}>
+                      <SeverityBadge severity={item.env} />
+                    </td>
+                    <td style={{ padding: "12px 8px", textAlign: "right" }}>
+                      <span className="font-mono" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                        {item.budget_amount > 0 ? (
+                          <>
+                            <span className="currency-symbol">$</span>
+                            {Math.round(item.budget_amount).toLocaleString("en-US")}
+                          </>
+                        ) : "—"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 8px", textAlign: "right" }}>
+                      <span className="font-mono" style={{ fontSize: "12px" }}>
+                        <span className="currency-symbol">$</span>
+                        {Math.round(item.actual_cost).toLocaleString("en-US")}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 8px", minWidth: "160px" }}>
                       {item.budget_amount > 0 ? (
-                        <>
-                          <span className="currency-symbol">$</span>
-                          {Math.round(item.budget_amount).toLocaleString("en-US")}
-                        </>
-                      ) : "—"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "12px 8px", textAlign: "right" }}>
-                    <span className="font-mono" style={{ fontSize: "12px" }}>
-                      <span className="currency-symbol">$</span>
-                      {Math.round(item.actual_cost).toLocaleString("en-US")}
-                    </span>
-                  </td>
-                  <td style={{ padding: "12px 8px", minWidth: "160px" }}>
-                    {item.budget_amount > 0 ? (
-                      <BudgetGauge usedPct={item.used_pct} status={item.status} />
-                    ) : (
-                      <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>No budget set</span>
-                    )}
-                  </td>
-                  <td style={{ padding: "12px 0 12px 8px" }}>
-                    <SeverityBadge severity={item.status} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Card>
+                        <BudgetGauge usedPct={item.used_pct} status={item.status} />
+                      ) : (
+                        <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>No budget set</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "12px 0 12px 8px" }}>
+                      <SeverityBadge severity={item.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+
+        <BudgetManager filters={filters} />
+      </div>
     </div>
   );
 }

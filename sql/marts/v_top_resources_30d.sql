@@ -14,7 +14,7 @@ SELECT
     SUM(billed_cost)    AS total_billed_cost,
     COUNT(DISTINCT charge_date) AS active_days
 FROM fact_daily_cost
-WHERE charge_date >= CURRENT_DATE - INTERVAL {{lookback_days}} DAY
+WHERE charge_date >= CURRENT_DATE - INTERVAL '{{lookback_days}} days'
 GROUP BY
     resource_id,
     resource_name,

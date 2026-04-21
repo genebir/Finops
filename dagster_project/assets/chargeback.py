@@ -12,22 +12,6 @@ from .raw_cur import MONTHLY_PARTITIONS
 
 _cfg = load_config()
 
-_CREATE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS dim_chargeback (
-    billing_month  VARCHAR        NOT NULL,
-    provider       VARCHAR        NOT NULL,
-    team           VARCHAR        NOT NULL,
-    product        VARCHAR        NOT NULL,
-    env            VARCHAR        NOT NULL,
-    cost_unit_key  VARCHAR        NOT NULL,
-    actual_cost    DECIMAL(18, 6) NOT NULL,
-    budget_amount  DECIMAL(18, 6),
-    utilization_pct DOUBLE,
-    resource_count BIGINT         NOT NULL,
-    PRIMARY KEY (billing_month, provider, team, product, env)
-)
-"""
-
 
 @asset(
     partitions_def=MONTHLY_PARTITIONS,
@@ -43,11 +27,7 @@ def chargeback(
     duckdb_resource: DuckDBResource,
     budget_store: BudgetStoreResource,
 ) -> None:
-    """멀티 클라우드 비용 배부 보고서 생성.
-
-    provider/team/product/env 단위로 집계하고 예산 데이터를 조인한다.
-    멱등성: billing_month별 DELETE + INSERT.
-    """
+    """멀티 클라우드 비용 배부 보고서 생성."""
     budget_store.ensure_table()
 
     partition_key = context.partition_key
@@ -57,55 +37,42 @@ def chargeback(
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     with duckdb_resource.get_connection() as conn:
-        conn.execute(_CREATE_TABLE_SQL)
-
-        has_fact = conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name='fact_daily_cost'"
-        ).fetchone()
-        if not has_fact:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='fact_daily_cost'"
+        )
+        if not cur.fetchone():
             context.log.warning("fact_daily_cost 테이블 없음 — chargeback 건너뜀")
+            cur.close()
             return
 
-        arrow = conn.execute(f"""
-            SELECT
-                provider,
-                team,
-                product,
-                env,
-                cost_unit_key,
-                SUM(CAST(effective_cost AS DOUBLE)) AS actual_cost,
-                COUNT(DISTINCT resource_id) AS resource_count
+        cur.execute("""
+            SELECT provider, team, product, env, cost_unit_key,
+                   SUM(CAST(effective_cost AS DOUBLE PRECISION)) AS actual_cost,
+                   COUNT(DISTINCT resource_id) AS resource_count
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+            WHERE to_char(charge_date, 'YYYY-MM') = %s
             GROUP BY provider, team, product, env, cost_unit_key
             ORDER BY actual_cost DESC
-        """).arrow()
+        """, [month_str])
+        chargeback_rows = cur.fetchall()
+        cur.close()
 
-    chargeback_df: pl.DataFrame = pl.from_arrow(arrow)  # type: ignore[arg-type]
-    context.log.info(f"[Chargeback] {len(chargeback_df)} groups for {month_str}")
+    context.log.info(f"[Chargeback] {len(chargeback_rows)} groups for {month_str}")
 
     rows: list[dict[str, object]] = []
-    for row in chargeback_df.iter_rows(named=True):
-        team = str(row["team"])
-        env = str(row["env"])
-        actual = float(row["actual_cost"])
+    for provider, team, product, env, cost_unit_key, actual, resource_count in chargeback_rows:
         budget = budget_store.get_budget(team, env)
-
         utilization_pct: float | None = None
         if budget and budget > 0:
-            utilization_pct = actual / budget * 100.0
+            utilization_pct = float(actual) / budget * 100.0
 
         rows.append({
-            "billing_month": month_str,
-            "provider": row["provider"],
-            "team": team,
-            "product": row["product"],
-            "env": env,
-            "cost_unit_key": row["cost_unit_key"],
-            "actual_cost": actual,
-            "budget_amount": budget,
-            "utilization_pct": utilization_pct,
-            "resource_count": int(row["resource_count"]),  # type: ignore[arg-type]
+            "billing_month": month_str, "provider": provider,
+            "team": team, "product": product, "env": env,
+            "cost_unit_key": cost_unit_key, "actual_cost": float(actual),
+            "budget_amount": budget, "utilization_pct": utilization_pct,
+            "resource_count": int(resource_count),
         })
 
     if rows:
@@ -113,27 +80,28 @@ def chargeback(
         result_df.write_csv(str(reports_dir / f"chargeback_{year_month}.csv"))
         context.log.info(f"[Chargeback] Wrote CSV to reports/chargeback_{year_month}.csv")
 
+        import psycopg2.extras
+
         with duckdb_resource.get_connection() as conn:
-            conn.execute(_CREATE_TABLE_SQL)
-            conn.execute(
-                "DELETE FROM dim_chargeback WHERE billing_month = ?", [month_str]
-            )
-            insert_df = result_df.with_columns([
-                pl.col("actual_cost").cast(pl.Float64),
-                pl.col("budget_amount").cast(pl.Float64),
-            ])
-            conn.register("_chargeback_rows", insert_df.to_arrow())
-            conn.execute("""
+            cur = conn.cursor()
+            cur.execute("DELETE FROM dim_chargeback WHERE billing_month = %s", [month_str])
+            values = [
+                (r["billing_month"], r["provider"], r["team"], r["product"], r["env"],
+                 r["cost_unit_key"], r["actual_cost"], r["budget_amount"],
+                 r["utilization_pct"], r["resource_count"])
+                for r in rows
+            ]
+            psycopg2.extras.execute_values(
+                cur,
+                """
                 INSERT INTO dim_chargeback
                     (billing_month, provider, team, product, env, cost_unit_key,
                      actual_cost, budget_amount, utilization_pct, resource_count)
-                SELECT billing_month, provider, team, product, env, cost_unit_key,
-                       CAST(actual_cost AS DECIMAL(18,6)),
-                       CAST(budget_amount AS DECIMAL(18,6)),
-                       utilization_pct,
-                       resource_count
-                FROM _chargeback_rows
-            """)
+                VALUES %s
+                """,
+                values, page_size=500,
+            )
+            cur.close()
         context.log.info(f"[Chargeback] Saved {len(rows)} rows to dim_chargeback")
     else:
         context.log.info(f"[Chargeback] No data for {month_str}")

@@ -5,7 +5,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-import pyarrow as pa
 from dagster import AssetExecutionContext, asset
 
 from ..core.forecast_provider import ForecastRecord
@@ -69,44 +68,41 @@ def _stub_forecast_records() -> list[ForecastRecord]:
 
 
 def _write_forecast_rows(conn: Any, rows: list[dict[str, Any]]) -> None:
-    conn.execute("""
-        CREATE OR REPLACE TABLE dim_forecast (
-            resource_address       VARCHAR NOT NULL,
-            monthly_cost           DECIMAL(18, 6) NOT NULL,
-            hourly_cost            DECIMAL(18, 6) NOT NULL,
-            currency               VARCHAR NOT NULL,
-            forecast_generated_at  TIMESTAMPTZ NOT NULL
-        )
-    """)
+    import psycopg2.extras
+
+    cur = conn.cursor()
+    cur.execute("DELETE FROM dim_forecast")
     if not rows:
+        cur.close()
         return
 
-    table = pa.table(
-        {
-            "resource_address": [r["resource_address"] for r in rows],
-            "monthly_cost": [float(r["monthly_cost"]) for r in rows],
-            "hourly_cost": [float(r["hourly_cost"]) for r in rows],
-            "currency": [r["currency"] for r in rows],
-            "forecast_generated_at": [r["forecast_generated_at"] for r in rows],
-        }
-    )
-    conn.register("_forecast_tmp", table)
-    conn.execute("""
+    values = [
+        (
+            r["resource_address"],
+            r["monthly_cost"],
+            r["hourly_cost"],
+            r["currency"],
+            r["forecast_generated_at"],
+        )
+        for r in rows
+    ]
+    psycopg2.extras.execute_values(
+        cur,
+        """
         INSERT INTO dim_forecast
-        SELECT
-            resource_address,
-            CAST(monthly_cost AS DECIMAL(18,6)),
-            CAST(hourly_cost AS DECIMAL(18,6)),
-            currency,
-            CAST(forecast_generated_at AS TIMESTAMPTZ)
-        FROM _forecast_tmp
-    """)
+            (resource_address, monthly_cost, hourly_cost, currency, forecast_generated_at)
+        VALUES %s
+        """,
+        values,
+        page_size=500,
+    )
+    cur.close()
 
 
 @asset(
     description=(
         "Infracost CLI로 terraform/sample을 분석하고 월별 예측 비용을 "
-        "DuckDB dim_forecast 테이블에 저장한다. "
+        "PostgreSQL dim_forecast 테이블에 저장한다. "
         "CLI 미설치 시 CUR 생성기 base_daily_cost 기반 stub 예측을 사용한다."
     ),
     group_name="forecast",
@@ -116,11 +112,7 @@ def infracost_forecast(
     infracost_cli: InfracostCliResource,
     duckdb_resource: DuckDBResource,
 ) -> None:
-    """Infracost breakdown → dim_forecast 테이블.
-
-    infracost CLI가 없으면 terraform 리소스 base_daily_cost × 30 stub으로 대체.
-    컬럼: resource_address, monthly_cost, hourly_cost, currency, forecast_generated_at
-    """
+    """Infracost breakdown → dim_forecast 테이블."""
     records: list[ForecastRecord]
     try:
         context.log.info("Running infracost breakdown...")

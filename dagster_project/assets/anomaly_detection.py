@@ -12,7 +12,6 @@ from ..resources.duckdb_io import DuckDBResource
 from ..resources.settings_store import SettingsStoreResource
 from .raw_cur import MONTHLY_PARTITIONS
 
-_SQL_DIR = Path(__file__).parent.parent.parent / "sql" / "marts"
 _cfg = load_config()
 _REPORTS_DIR = Path(_cfg.data.reports_dir)
 
@@ -22,7 +21,7 @@ _REPORTS_DIR = Path(_cfg.data.reports_dir)
     deps=["gold_marts"],
     description=(
         "fact_daily_cost를 읽어 설정된 탐지기(Z-score, IsolationForest)로 이상치를 탐지하고 "
-        "anomaly_scores 테이블(DuckDB)과 data/reports/anomalies_YYYYMM.csv를 생성한다."
+        "anomaly_scores 테이블(PostgreSQL)과 data/reports/anomalies_YYYYMM.csv를 생성한다."
     ),
     group_name="analytics",
 )
@@ -31,47 +30,43 @@ def anomaly_detection(
     duckdb_resource: DuckDBResource,
     settings_store: SettingsStoreResource,
 ) -> None:
-    """멀티 탐지기 이상치 탐지 실행.
-
-    platform_settings의 anomaly.active_detectors 값으로 활성 탐지기를 제어한다.
-    탐지 결과는 detector_name 컬럼으로 구분되어 anomaly_scores에 저장된다.
-    """
+    """멀티 탐지기 이상치 탐지 실행."""
     partition_key = context.partition_key
-    year_month = partition_key[:7].replace("-", "")
+    month_str = partition_key[:7]
+    year_month = month_str.replace("-", "")
     _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     output_path = _REPORTS_DIR / f"anomalies_{year_month}.csv"
 
     with duckdb_resource.get_connection() as conn:
-        tables = conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name = 'fact_daily_cost'"
-        ).fetchall()
-        if not tables:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename='fact_daily_cost'"
+        )
+        if not cur.fetchone():
             context.log.warning("fact_daily_cost not found — skipping anomaly detection")
+            cur.close()
             return
 
-        month_str = partition_key[:7]
-        arrow = conn.execute(f"""
-            SELECT
-                charge_date,
-                resource_id,
-                cost_unit_key,
-                team,
-                product,
-                env,
-                CAST(effective_cost AS DOUBLE) AS effective_cost
+        cur.execute(
+            """
+            SELECT charge_date, resource_id, cost_unit_key, team, product, env,
+                   CAST(effective_cost AS DOUBLE PRECISION) AS effective_cost
             FROM fact_daily_cost
-            WHERE STRFTIME(charge_date, '%Y-%m') = '{month_str}'
+            WHERE to_char(charge_date, 'YYYY-MM') = %s
             ORDER BY resource_id, charge_date
-        """).arrow()
+            """,
+            [month_str],
+        )
+        columns = [desc[0] for desc in cur.description]
+        rows_raw = cur.fetchall()
+        cur.close()
 
-    result = pl.from_arrow(arrow)
-    assert isinstance(result, pl.DataFrame)
-    df: pl.DataFrame = result
-    context.log.info(f"Loaded {len(df)} rows from fact_daily_cost for {month_str}")
-
-    if df.is_empty():
+    if not rows_raw:
         context.log.warning(f"No data for partition {partition_key} — skipping")
         return
+
+    df = pl.DataFrame(rows_raw, schema=columns, orient="row")
+    context.log.info(f"Loaded {len(df)} rows from fact_daily_cost for {month_str}")
 
     settings_store.ensure_table()
     active_detectors_str = settings_store.get_str("anomaly.active_detectors", "zscore")
@@ -99,21 +94,11 @@ def anomaly_detection(
             from ..detectors.isolation_forest_detector import IsolationForestDetector
 
             if_anomalies = IsolationForestDetector(
-                contamination=settings_store.get_float(
-                    "isolation_forest.contamination", 0.05
-                ),
-                n_estimators=settings_store.get_int(
-                    "isolation_forest.n_estimators", 100
-                ),
-                random_state=settings_store.get_int(
-                    "isolation_forest.random_state", 42
-                ),
-                score_critical=settings_store.get_float(
-                    "isolation_forest.score_critical", -0.20
-                ),
-                score_warning=settings_store.get_float(
-                    "isolation_forest.score_warning", -0.05
-                ),
+                contamination=settings_store.get_float("isolation_forest.contamination", 0.05),
+                n_estimators=settings_store.get_int("isolation_forest.n_estimators", 100),
+                random_state=settings_store.get_int("isolation_forest.random_state", 42),
+                score_critical=settings_store.get_float("isolation_forest.score_critical", -0.20),
+                score_warning=settings_store.get_float("isolation_forest.score_warning", -0.05),
             ).detect(df)
             all_anomalies.extend(if_anomalies)
             context.log.info(f"IsolationForest: {len(if_anomalies)}개 이상치")
@@ -125,12 +110,8 @@ def anomaly_detection(
 
         ma_anomalies = MovingAverageDetector(
             window_days=settings_store.get_int("moving_average.window_days", 7),
-            multiplier_warning=settings_store.get_float(
-                "moving_average.multiplier_warning", 2.0
-            ),
-            multiplier_critical=settings_store.get_float(
-                "moving_average.multiplier_critical", 3.0
-            ),
+            multiplier_warning=settings_store.get_float("moving_average.multiplier_warning", 2.0),
+            multiplier_critical=settings_store.get_float("moving_average.multiplier_critical", 3.0),
             min_window=settings_store.get_int("moving_average.min_window", 3),
         ).detect(df)
         all_anomalies.extend(ma_anomalies)
@@ -161,12 +142,8 @@ def anomaly_detection(
 
             ae_anomalies = AutoencoderDetector(
                 window_size=settings_store.get_int("autoencoder.window_size", 7),
-                threshold_warning=settings_store.get_float(
-                    "autoencoder.threshold_warning", 2.0
-                ),
-                threshold_critical=settings_store.get_float(
-                    "autoencoder.threshold_critical", 3.0
-                ),
+                threshold_warning=settings_store.get_float("autoencoder.threshold_warning", 2.0),
+                threshold_critical=settings_store.get_float("autoencoder.threshold_critical", 3.0),
                 min_samples=settings_store.get_int("autoencoder.min_samples", 14),
                 max_iter=settings_store.get_int("autoencoder.max_iter", 200),
             ).detect(df)
@@ -181,60 +158,54 @@ def anomaly_detection(
         f"warning: {sum(1 for a in all_anomalies if a.severity == 'warning')})"
     )
 
-    rows = [
-        {
-            "resource_id": a.resource_id,
-            "cost_unit_key": a.cost_unit_key,
-            "team": a.team,
-            "product": a.product,
-            "env": a.env,
-            "charge_date": a.charge_date.isoformat(),
-            "effective_cost": float(a.effective_cost),
-            "mean_cost": float(a.mean_cost),
-            "std_cost": float(a.std_cost),
-            "z_score": a.z_score,
-            "is_anomaly": a.is_anomaly,
-            "severity": a.severity,
-            "detector_name": a.detector_name,
-        }
+    anomaly_rows = [
+        (
+            a.resource_id, a.cost_unit_key, a.team, a.product, a.env,
+            a.charge_date.isoformat(), float(a.effective_cost),
+            float(a.mean_cost), float(a.std_cost), a.z_score,
+            a.is_anomaly, a.severity, a.detector_name,
+        )
         for a in all_anomalies
     ]
 
-    anomaly_df = pl.DataFrame(rows) if rows else _empty_anomaly_df()
+    anomaly_df = pl.DataFrame(
+        [
+            {
+                "resource_id": a.resource_id, "cost_unit_key": a.cost_unit_key,
+                "team": a.team, "product": a.product, "env": a.env,
+                "charge_date": a.charge_date.isoformat(),
+                "effective_cost": float(a.effective_cost),
+                "mean_cost": float(a.mean_cost), "std_cost": float(a.std_cost),
+                "z_score": a.z_score, "is_anomaly": a.is_anomaly,
+                "severity": a.severity, "detector_name": a.detector_name,
+            }
+            for a in all_anomalies
+        ]
+    ) if all_anomalies else _empty_anomaly_df()
 
     with duckdb_resource.get_connection() as conn:
-        create_sql = (_SQL_DIR / "anomaly_scores.sql").read_text()
-        conn.execute(create_sql)
-        # Phase 3 마이그레이션: detector_name 컬럼 추가
-        conn.execute(
-            "ALTER TABLE anomaly_scores ADD COLUMN IF NOT EXISTS detector_name VARCHAR DEFAULT 'zscore'"
-        )
-
-        conn.execute(
-            "DELETE FROM anomaly_scores WHERE STRFTIME(charge_date, '%Y-%m') = ?",
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM anomaly_scores WHERE to_char(charge_date, 'YYYY-MM') = %s",
             [month_str],
         )
-        if rows:
-            conn.register("anomaly_rows", anomaly_df.to_arrow())
-            conn.execute("""
+        if anomaly_rows:
+            import psycopg2.extras
+
+            psycopg2.extras.execute_values(
+                cur,
+                """
                 INSERT INTO anomaly_scores
-                SELECT
-                    resource_id,
-                    cost_unit_key,
-                    team,
-                    product,
-                    env,
-                    CAST(charge_date AS DATE),
-                    CAST(effective_cost AS DECIMAL(18,6)),
-                    CAST(mean_cost     AS DECIMAL(18,6)),
-                    CAST(std_cost      AS DECIMAL(18,6)),
-                    z_score,
-                    is_anomaly,
-                    severity,
-                    detector_name
-                FROM anomaly_rows
-            """)
-            context.log.info(f"Inserted {len(rows)} rows into anomaly_scores")
+                    (resource_id, cost_unit_key, team, product, env,
+                     charge_date, effective_cost, mean_cost, std_cost,
+                     z_score, is_anomaly, severity, detector_name)
+                VALUES %s
+                """,
+                anomaly_rows,
+                page_size=500,
+            )
+            context.log.info(f"Inserted {len(anomaly_rows)} rows into anomaly_scores")
+        cur.close()
 
     anomaly_df.write_csv(str(output_path))
     context.log.info(f"Wrote anomaly report to {output_path}")
@@ -243,18 +214,11 @@ def anomaly_detection(
 def _empty_anomaly_df() -> pl.DataFrame:
     return pl.DataFrame(
         schema={
-            "resource_id": pl.Utf8,
-            "cost_unit_key": pl.Utf8,
-            "team": pl.Utf8,
-            "product": pl.Utf8,
-            "env": pl.Utf8,
-            "charge_date": pl.Utf8,
-            "effective_cost": pl.Float64,
-            "mean_cost": pl.Float64,
-            "std_cost": pl.Float64,
-            "z_score": pl.Float64,
-            "is_anomaly": pl.Boolean,
-            "severity": pl.Utf8,
-            "detector_name": pl.Utf8,
+            "resource_id": pl.Utf8, "cost_unit_key": pl.Utf8,
+            "team": pl.Utf8, "product": pl.Utf8, "env": pl.Utf8,
+            "charge_date": pl.Utf8, "effective_cost": pl.Float64,
+            "mean_cost": pl.Float64, "std_cost": pl.Float64,
+            "z_score": pl.Float64, "is_anomaly": pl.Boolean,
+            "severity": pl.Utf8, "detector_name": pl.Utf8,
         }
     )

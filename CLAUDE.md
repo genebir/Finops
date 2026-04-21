@@ -810,6 +810,24 @@ uv run mypy dagster_project
   - 서비스 구성: Dagster(3000), Streamlit(8501), FastAPI(8000), Dashboard(3002)
 - **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
 
+### Phase 9 — 대시보드 확장 (anomalies/forecast/budget/cost-explorer/recommendations)
+
+- `api/main.py` — Phase 8.1 위에 5개 엔드포인트 추가 (단일 파일 유지)
+- `web-app/app/(dashboard)/` — 5개 페이지 추가, 사이드바 활성 링크 하이라이트
+- **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
+
+### Phase 10 — API 아키텍처 리팩토링 + Budget CRUD + 대시보드 UX
+
+- `api/main.py` — 슬림 엔트리 (CORS 확장 GET/POST/PUT/DELETE, `/health` 추가)
+- `api/deps.py` — `db_read`/`db_write` 컨텍스트매니저, 쓰기 락 백오프 retry
+- `api/models/`, `api/routers/` — 라우터·모델 분리 (FastAPI 표준 구조)
+- Budget CRUD: POST/PUT/DELETE `/api/budget[/entries]` + 409 중복 감지
+- Settings PUT (기존 키만 갱신), `/api/filters` 단일 드롭다운 엔드포인트
+- Cost Explorer: provider 필터 + `by_provider[]`, Chargeback: `available_months` 월 선택
+- 모든 동적 쿼리 파라미터 바인딩 (SQL 인젝션 방지)
+- Frontend: BudgetManager CRUD UI, Settings 인라인 편집, CostExplorer 필터 확장, Chargeback 월 셀렉터
+- **311 tests, 94.56% coverage** (Python 파이프라인 무변경) ✅
+
 ---
 
 ## 15. Phase 9 — 대시보드 확장
@@ -853,8 +871,126 @@ Phase 8.1에서 Overview 페이지 MVP가 검증됐다. Phase 9는 나머지 핵
 5. `GET /api/recommendations` + `recommendations/page.tsx`
 6. 사이드바 활성 링크 하이라이트 (`usePathname`)
 
-### 장기 과제 (Phase 10+)
+---
+
+## 16. Phase 10 — API 아키텍처 리팩토링 + Budget CRUD + 대시보드 UX
+
+Phase 9에서 단일 `api/main.py` 592줄에 모든 엔드포인트가 쌓였다. Phase 10은 프로덕션 운영에 필요한 **구조·보안·UX**를 보강한다.
+
+### 10.1 API 재구조화 (router/model/deps 분리)
+
+```
+api/
+├── main.py              # 슬림 엔트리 (FastAPI app + include_router + CORS + /health)
+├── deps.py              # 공통 의존성: db_read/db_write 컨텍스트매니저, f(), tables(), columns()
+├── models/              # Pydantic 요청·응답 모델
+│   ├── __init__.py      # 모든 모델 re-export
+│   ├── anomalies.py
+│   ├── budget.py        # BudgetCreateRequest, BudgetUpdateRequest, BudgetEntry ...
+│   ├── chargeback.py
+│   ├── cost_explorer.py # ProviderCost 추가
+│   ├── filters.py       # FiltersResponse — 드롭다운 옵션 단일 라운드트립
+│   ├── forecast.py
+│   ├── overview.py
+│   ├── recommendations.py
+│   └── settings.py      # SettingUpdateRequest 추가
+└── routers/             # 엔드포인트 (APIRouter 단위)
+    ├── overview.py          # + start/end/provider 쿼리 파라미터
+    ├── anomalies.py
+    ├── forecast.py
+    ├── budget.py            # GET status + GET/POST/PUT/DELETE entries (CRUD)
+    ├── cost_explorer.py     # + provider 필터, 파라미터화 쿼리
+    ├── recommendations.py
+    ├── chargeback.py        # + billing_month 쿼리, available_months 응답
+    ├── filters.py           # GET /api/filters
+    └── settings.py          # GET + PUT (기존 키만 갱신)
+```
+
+### 10.2 신규/확장 엔드포인트
+
+| 메서드 | 경로 | 역할 |
+|---|---|---|
+| GET  | `/health` | 라이브니스 체크 |
+| GET  | `/api/filters` | teams/envs/providers/services/billing_months/date_min/date_max 단일 응답 (드롭다운용) |
+| GET  | `/api/budget/entries` | `dim_budget` 원본 행 (CRUD UI용) |
+| POST | `/api/budget` | 신규 예산 (409 on conflict) |
+| PUT  | `/api/budget/{team}/{env}?billing_month=default` | 금액 갱신 |
+| DELETE | `/api/budget/{team}/{env}?billing_month=default` | 삭제 (204) |
+| PUT  | `/api/settings/{key}` | `platform_settings.value` 갱신 (기존 키만, 신규 키 생성 금지) |
+| GET  | `/api/cost-explorer?provider=aws&start=...&end=...` | provider 필터 추가, 응답에 `by_provider[]` |
+| GET  | `/api/chargeback?billing_month=2026-03` | 월 선택 + `available_months[]` 반환 |
+| GET  | `/api/overview?start=...&end=...&provider=...` | 날짜 범위 + provider 필터 |
+
+### 10.3 DB 접근 패턴
+
+`api/deps.py`:
+
+```python
+@contextmanager
+def db_read() -> Generator[DuckDBPyConnection, None, None]:
+    conn = duckdb.connect(DB_PATH, read_only=True)
+    try: yield conn
+    finally: conn.close()
+
+@contextmanager
+def db_write() -> Generator[DuckDBPyConnection, None, None]:
+    # 8회 지수 백오프 (0.25s × 2^attempt + jitter), Dagster와 락 충돌 방지
+    # 최종 실패 시 HTTPException(503, "Database busy after N retries: ...")
+```
+
+- **읽기는 read_only=True** — Dagster write와 동시 접근 가능
+- **쓰기는 retry 백오프** — Dagster job 실행 중에도 CRUD 가능
+- 모든 동적 쿼리는 파라미터 바인딩 (`db.execute("... WHERE team = ?", [team])`) — SQL 인젝션 방지
+
+### 10.4 프론트엔드 변경사항
+
+- `web-app/lib/api.ts` — `get()`/`getFresh()`/`send()` 헬퍼 + 신규 메서드 (budgetEntries, createBudget, updateBudget, deleteBudget, updateSetting, filters 등)
+- `app/(dashboard)/budget/BudgetManager.tsx` — NEW 클라이언트 컴포넌트:
+  - Add 폼 (team/env/amount/billing_month)
+  - 인라인 편집 (PencilSimple → Check/X)
+  - 삭제 확인 (Trash)
+- `app/(dashboard)/settings/SettingsClient.tsx` — NEW 인라인 편집 (Enter 저장, Escape 취소)
+- `app/(dashboard)/cost-explorer/CostExplorerClient.tsx` — provider/service 드롭다운, 날짜 범위, "Clear N filters" 버튼, provider breakdown 카드 (provider 2개 이상일 때)
+- `app/(dashboard)/chargeback/ChargebackClient.tsx` — 월 선택 드롭다운 + `available_months` 로딩
+
+### 10.5 설계 원칙 (Phase 9와의 차이)
+
+| 항목 | Phase 9 | Phase 10 |
+|---|---|---|
+| API 파일 구조 | `api/main.py` 단일 파일 | router/model/deps 분리 |
+| DB 커넥션 | 매 요청마다 `duckdb.connect(path)` | `db_read()` / `db_write()` 컨텍스트매니저 |
+| 쓰기 락 충돌 | 고려 안함 | 지수 백오프 retry (Dagster 공존) |
+| SQL 동적 생성 | f-string 일부 | 모든 값 파라미터 바인딩 |
+| 필터 옵션 | overview 응답에 포함 | `/api/filters` 단일 엔드포인트 |
+| Budget | 읽기 전용 | POST/PUT/DELETE CRUD |
+| Settings | 읽기 전용 | PUT (기존 키만) |
+| Cost Explorer | team/env/날짜 | + provider, by_provider 집계 |
+| Chargeback | 최신 월만 | 월 선택 + 과거 월 조회 |
+
+### 10.6 검증
+
+```bash
+# 전체 엔드포인트 헬스체크
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/health
+for p in /api/overview /api/anomalies /api/forecast /api/budget /api/budget/entries \
+         /api/cost-explorer /api/recommendations /api/chargeback /api/filters /api/settings; do
+  echo "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000$p)  $p"
+done
+# 모두 200 기대
+
+# Budget CRUD 왕복
+curl -X POST http://localhost:8000/api/budget \
+  -H 'Content-Type: application/json' \
+  -d '{"team":"demo","env":"dev","budget_amount":100,"billing_month":"default"}'
+curl -X PUT 'http://localhost:8000/api/budget/demo/dev?billing_month=default' \
+  -H 'Content-Type: application/json' -d '{"budget_amount":200}'
+curl -X DELETE 'http://localhost:8000/api/budget/demo/dev?billing_month=default'
+```
+
+### 10.7 Phase 10 이후 남은 과제
 
 - 실제 클라우드 API 연동 (AWS CUR S3, GCP Billing Export, Azure Cost Management)
-- 팀별 데이터 접근 제어 (인증)
+- 팀별 데이터 접근 제어 (인증·인가)
 - 이메일 AlertSink Streamlit 설정 UI
+- FastAPI 의존성 주입 기반 `SettingsStoreResource`/`BudgetStoreResource` 재사용 (현재는 DuckDB 직접 접근)
+- pytest 기반 FastAPI 라우터 통합 테스트 (`TestClient`)

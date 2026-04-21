@@ -35,11 +35,19 @@ export interface BudgetItem {
 export interface BudgetData {
   items: BudgetItem[]; total_budget: number; total_actual: number;
 }
+export interface BudgetEntry {
+  team: string; env: string; budget_amount: number; billing_month: string;
+}
+export interface BudgetEntryList { items: BudgetEntry[] }
 export interface DailyCost { charge_date: string; cost: number }
 export interface ServiceCost { service_name: string; cost: number; pct: number }
+export interface ProviderCost { provider: string; cost: number; pct: number }
 export interface ExplorerData {
-  daily: DailyCost[]; by_service: ServiceCost[];
-  total: number; avg_daily: number;
+  daily: DailyCost[];
+  by_service: ServiceCost[];
+  by_provider: ProviderCost[];
+  total: number;
+  avg_daily: number;
 }
 export interface RecommendationItem {
   rule_type: string; resource_id: string;
@@ -56,8 +64,22 @@ export interface ChargebackItem {
   team: string; product: string; env: string; cost: number; pct: number;
 }
 export interface ChargebackData {
-  billing_month: string; total_cost: number;
-  by_team: ChargebackTeam[]; items: ChargebackItem[];
+  billing_month: string;
+  available_months: string[];
+  total_cost: number;
+  by_team: ChargebackTeam[];
+  items: ChargebackItem[];
 }
-export interface SettingItem { key: string; value: string }
+export interface SettingItem {
+  key: string; value: string; value_type: string; description: string | null;
+}
 export interface SettingsData { items: SettingItem[] }
+export interface FiltersData {
+  teams: string[];
+  envs: string[];
+  providers: string[];
+  services: string[];
+  billing_months: string[];
+  date_min: string | null;
+  date_max: string | null;
+}

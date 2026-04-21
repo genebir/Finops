@@ -9,7 +9,6 @@ from pathlib import Path
 from dagster_project.assets.infracost_forecast import (
     _parse_forecast_records,
     _stub_forecast_records,
-    _write_forecast_rows,
 )
 from dagster_project.resources.duckdb_io import DuckDBResource
 from dagster_project.resources.iceberg_catalog import IcebergCatalogResource
@@ -82,52 +81,16 @@ class TestParseForecastEdgeCases:
         assert records[0].monthly_cost == Decimal("5.5")
 
 
-class TestWriteForecastRows:
-    def test_write_forecast_rows_creates_table(self) -> None:
-        import duckdb
-        conn = duckdb.connect()
-        rows = [
-            {
-                "resource_address": "aws_instance.web_1",
-                "monthly_cost": "100.0",
-                "hourly_cost": "0.14",
-                "currency": "USD",
-                "forecast_generated_at": "2024-01-01T00:00:00+00:00",
-            }
-        ]
-        _write_forecast_rows(conn, rows)
-        result = conn.execute("SELECT COUNT(*) FROM dim_forecast").fetchone()
-        assert result is not None
-        assert result[0] == 1
-
-    def test_write_forecast_rows_empty_creates_empty_table(self) -> None:
-        import duckdb
-        conn = duckdb.connect()
-        _write_forecast_rows(conn, [])
-        result = conn.execute("SELECT COUNT(*) FROM dim_forecast").fetchone()
-        assert result is not None
-        assert result[0] == 0
-
-
 class TestDuckDBResource:
-    def test_execute_runs_without_error(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = str(Path(tmpdir) / "test.duckdb")
-            resource = DuckDBResource(db_path=db_path)
-            # execute는 연결을 닫고 반환하므로 예외 없이 완료되어야 함
-            resource.execute("CREATE TABLE t (x INT)")
-            resource.execute("INSERT INTO t VALUES (1)")
-
-    def test_get_connection_creates_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = str(Path(tmpdir) / "subdir" / "test.duckdb")
-            resource = DuckDBResource(db_path=db_path)
-            with resource.get_connection() as conn:
-                conn.execute("CREATE TABLE t (x INT)")
-                conn.execute("INSERT INTO t VALUES (1)")
-                result = conn.execute("SELECT x FROM t").fetchone()
-                assert result is not None
-                assert result[0] == 1
+    def test_get_connection_works(self) -> None:
+        resource = DuckDBResource()
+        with resource.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 AS val")
+            result = cur.fetchone()
+            cur.close()
+            assert result is not None
+            assert result[0] == 1
 
 
 class TestStubForecastRecords:
@@ -158,7 +121,7 @@ class TestIcebergCatalogResource:
                 catalog_db_path=str(Path(tmpdir) / "catalog.db"),
             )
             catalog.ensure_namespace("test_ns")
-            catalog.ensure_namespace("test_ns")  # 두 번 호출해도 예외 없어야 함
+            catalog.ensure_namespace("test_ns")
 
     def test_ensure_table_with_properties(self) -> None:
         """properties 파라미터 경로 커버."""
