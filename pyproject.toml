@@ -3,7 +3,7 @@ name = "finops-platform"
 version = "0.1.0"
 description = "Local FinOps platform — cost visibility, variance analysis, and extensible multi-cloud support"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "dagster>=1.8",
     "dagster-webserver>=1.8",
@@ -14,6 +14,12 @@ dependencies = [
     "python-dotenv>=1.0",
     "rich>=13.0",
     "pyarrow>=14.0",
+    "prophet>=1.1",
+    "slack-sdk>=3.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.4",
+    "streamlit>=1.35",
+    "plotly>=5.0",
 ]
 
 [project.optional-dependencies]
@@ -33,7 +39,7 @@ packages = ["dagster_project"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "PTH"]
@@ -41,10 +47,14 @@ ignore = ["E501"]
 
 [tool.mypy]
 strict = true
-python_version = "3.11"
+python_version = "3.14"
 ignore_missing_imports = false
 warn_return_any = true
 disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["prophet", "prophet.*", "yaml"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,3 +62,9 @@ addopts = "--tb=short"
 
 [tool.dagster]
 module_name = "dagster_project.definitions"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+]

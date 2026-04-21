@@ -142,6 +142,30 @@ class TestAnomalies:
                 assert anomaly.base_daily_cost >= avg_normal * Decimal("3")
 
 
+class TestEdgeCases:
+    def test_december_billing_period_wraps_to_next_year(self) -> None:
+        """12월 생성 시 BillingPeriodEnd가 다음 해 1월이어야 한다."""
+        gen = AwsCurGenerator(seed=42)
+        records = list(gen.generate(date(2024, 12, 1), date(2025, 1, 1)))
+        assert len(records) > 0
+        rec = records[0]
+        assert rec.BillingPeriodEnd.year == 2025
+        assert rec.BillingPeriodEnd.month == 1
+
+    def test_cur_seed_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CUR_SEED 환경변수가 있으면 해당 값이 seed로 사용된다."""
+        monkeypatch.setenv("CUR_SEED", "99")
+        gen = AwsCurGenerator()
+        assert gen._seed == 99  # noqa: SLF001
+
+    def test_cost_unit_property(self) -> None:
+        """_ResourceDef.cost_unit은 tags에서 CostUnit을 생성한다."""
+        res = _TERRAFORM_RESOURCES[0]
+        cost_unit = res.cost_unit
+        assert cost_unit.team == res.tags["team"]
+        assert cost_unit.env == res.tags["env"]
+
+
 class TestResourceIdFormat:
     def test_terraform_resource_id_format(self) -> None:
         for res in _TERRAFORM_RESOURCES:

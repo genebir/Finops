@@ -16,7 +16,7 @@ class DuckDBResource(ConfigurableResource):
     db_path: str = "data/marts.duckdb"
 
     @contextmanager
-    def get_connection(self) -> Generator[duckdb.DuckDBPyConnection, None, None]:
+    def get_connection(self) -> Generator[duckdb.DuckDBPyConnection]:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = duckdb.connect(self.db_path)
         try:

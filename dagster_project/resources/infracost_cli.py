@@ -15,6 +15,7 @@ class InfracostCliResource(ConfigurableResource):
 
     terraform_path: str = "terraform/sample"
     infracost_binary: str = "infracost"
+    subprocess_timeout_sec: int = 120
 
     def breakdown_json(self) -> dict[str, Any]:
         """infracost breakdown --format json 실행 후 파싱된 결과를 반환."""
@@ -33,7 +34,7 @@ class InfracostCliResource(ConfigurableResource):
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=self.subprocess_timeout_sec,
         )
         if result.returncode != 0:
             raise RuntimeError(

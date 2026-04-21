@@ -1,8 +1,6 @@
 """Silver Asset — Bronze Iceberg → Polars 정제, Tags 평탄화, CostUnit 파생."""
 
 
-import json
-
 import polars as pl
 from dagster import AssetExecutionContext, asset
 from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -15,6 +13,7 @@ from pyiceberg.types import (
 )
 
 from ..resources.iceberg_catalog import IcebergCatalogResource
+from ..utils.silver_transforms import flatten_tags
 from .raw_cur import MONTHLY_PARTITIONS
 
 _BRONZE_TABLE = "focus.bronze_cur"
@@ -72,33 +71,6 @@ _SILVER_PARTITION_SPEC = PartitionSpec(
 )
 
 
-def _flatten_tags(df: pl.DataFrame) -> pl.DataFrame:
-    """Tags JSON 컬럼 → team, product, env, cost_unit_key 컬럼 추가."""
-
-    def extract_tag(tags_json: str | None, key: str) -> str:
-        if tags_json is None:
-            return "unknown"
-        try:
-            tags = json.loads(tags_json)
-            return str(tags.get(key, "unknown"))
-        except (json.JSONDecodeError, AttributeError):
-            return "unknown"
-
-    teams = [extract_tag(t, "team") for t in df["Tags"].to_list()]
-    products = [extract_tag(t, "product") for t in df["Tags"].to_list()]
-    envs = [extract_tag(t, "env") for t in df["Tags"].to_list()]
-    keys = [f"{t}:{p}:{e}" for t, p, e in zip(teams, products, envs, strict=True)]
-
-    return df.with_columns(
-        [
-            pl.Series("team", teams),
-            pl.Series("product", products),
-            pl.Series("env", envs),
-            pl.Series("cost_unit_key", keys),
-            pl.col("ChargePeriodStart").alias("ChargePeriodStartUtc"),
-        ]
-    )
-
 
 @asset(
     partitions_def=MONTHLY_PARTITIONS,
@@ -134,7 +106,7 @@ def silver_focus(
 
     context.log.info(f"Filtered to {len(df)} rows for {month_str}")
 
-    df = _flatten_tags(df)
+    df = flatten_tags(df)
 
 
     arrow_table = df.to_arrow()

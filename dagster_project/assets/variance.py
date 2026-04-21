@@ -6,10 +6,13 @@ from pathlib import Path
 import polars as pl
 from dagster import AssetExecutionContext, asset
 
+from ..config import load_config
 from ..resources.duckdb_io import DuckDBResource
+from ..resources.settings_store import SettingsStoreResource
 from .raw_cur import MONTHLY_PARTITIONS
 
-_REPORTS_DIR = Path("data/reports")
+_cfg = load_config()
+_REPORTS_DIR = Path(_cfg.data.reports_dir)
 _VARIANCE_SQL = Path(__file__).parent.parent.parent / "sql" / "marts" / "v_variance.sql"
 
 
@@ -25,6 +28,7 @@ _VARIANCE_SQL = Path(__file__).parent.parent.parent / "sql" / "marts" / "v_varia
 def variance(
     context: AssetExecutionContext,
     duckdb_resource: DuckDBResource,
+    settings_store: SettingsStoreResource,
 ) -> None:
     """예측 vs 실제 비용 편차 리포트 생성.
 
@@ -48,8 +52,19 @@ def variance(
             context.log.warning("dim_forecast not found — skipping variance calculation")
             return
 
-        # v_variance view 생성
-        variance_sql = _VARIANCE_SQL.read_text()
+        # v_variance view 생성 (settings_store에서 임계값 읽기)
+        settings_store.ensure_table()
+        over_pct = settings_store.get_float(
+            "variance.threshold.over_pct", _cfg.operational_defaults.variance_over_pct
+        )
+        under_pct = settings_store.get_float(
+            "variance.threshold.under_pct", abs(_cfg.operational_defaults.variance_under_pct)
+        )
+        variance_sql = (
+            _VARIANCE_SQL.read_text()
+            .replace("{{variance_over_pct}}", str(over_pct))
+            .replace("{{variance_under_pct}}", str(under_pct))
+        )
         conn.execute(variance_sql)
 
         # 해당 월 필터 적용하여 CSV 출력

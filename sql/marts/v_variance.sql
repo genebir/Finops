@@ -22,9 +22,9 @@ SELECT
     CASE
         WHEN a.resource_id IS NULL                               THEN 'unmatched'
         WHEN (COALESCE(a.actual_mtd, 0) - f.monthly_cost)
-             / NULLIF(f.monthly_cost, 0) * 100 > 20             THEN 'over'
+             / NULLIF(f.monthly_cost, 0) * 100 > {{variance_over_pct}}  THEN 'over'
         WHEN (COALESCE(a.actual_mtd, 0) - f.monthly_cost)
-             / NULLIF(f.monthly_cost, 0) * 100 < -20            THEN 'under'
+             / NULLIF(f.monthly_cost, 0) * 100 < -{{variance_under_pct}} THEN 'under'
         ELSE 'ok'
     END                                                          AS status,
     f.currency,

@@ -1,0 +1,110 @@
+# FinOps Platform 설정 파일
+# 환경별 재정의는 config/settings.local.yaml (gitignore됨)을 생성하세요.
+# 시크릿(SLACK_WEBHOOK_URL 등)은 .env 파일만 사용하세요.
+
+data:
+  warehouse_path: "data/warehouse"
+  catalog_db_path: "data/catalog.db"
+  duckdb_path: "data/marts.duckdb"
+  reports_dir: "data/reports"
+
+dagster:
+  partition_start_date: "2024-01-01"
+
+iceberg:
+  catalog_name: "finops"
+  bronze_table: "focus.bronze_cur"
+  silver_table: "focus.silver_focus"
+
+cur_generator:
+  seed: 42                        # CUR_SEED 환경변수로 재정의 가능
+  billing_account_id: "123456789012"
+  sub_account_id: "987654321098"
+  extra_resources_min: 5
+  extra_resources_max: 20
+  cost_variation_low: 0.85        # 일별 비용 변동 하한 (±15%)
+  cost_variation_high: 1.15       # 일별 비용 변동 상한
+  anomaly_multiplier_low: 5.0     # 의도적 이상치 최소 배율
+  anomaly_multiplier_high: 8.0    # 의도적 이상치 최대 배율
+  list_price_markup: 1.15         # ListCost = EffectiveCost × markup
+
+prophet:
+  forecast_horizon_days: 30
+  seasonality_mode: "multiplicative"
+  min_training_days: 14
+  hours_per_month: 720            # 예측 시간당 비용 계산 기준
+
+infracost:
+  terraform_path: "terraform/sample"
+  binary: "infracost"
+  subprocess_timeout_sec: 120
+
+slack:
+  webhook_timeout_sec: 10
+
+gcp_generator:
+  seed: 84                          # AWS와 다른 시드 → 독립적인 랜덤 시퀀스
+  project_id: "my-finops-project"
+  billing_account_id: "GCP-BILLING-001"
+  sub_account_id: "GCP-PROJECT-001"
+  extra_resources_min: 3
+  extra_resources_max: 15
+  cost_variation_low: 0.80
+  cost_variation_high: 1.20
+  anomaly_multiplier_low: 4.0
+  anomaly_multiplier_high: 7.0
+  list_price_markup: 1.10
+
+gcp_iceberg:
+  bronze_table: "focus.bronze_cur_gcp"
+  silver_table: "focus.silver_focus_gcp"
+
+azure_generator:
+  seed: 126                         # GCP(84), AWS(42)와 다른 시드
+  billing_account_id: "AZURE-BILLING-001"
+  sub_account_id: "AZURE-SUB-001"
+  extra_resources_min: 3
+  extra_resources_max: 15
+  cost_variation_low: 0.80
+  cost_variation_high: 1.20
+  anomaly_multiplier_low: 4.0
+  anomaly_multiplier_high: 7.0
+  list_price_markup: 1.12
+
+azure_iceberg:
+  bronze_table: "focus.bronze_cur_azure"
+  silver_table: "focus.silver_focus_azure"
+
+budget_defaults:
+  # (team, env) 기본 월 예산. "*" = 전체 팀 or 전체 환경 와일드카드
+  entries:
+    - team: "platform"
+      env: "prod"
+      amount: 5000.0
+    - team: "data"
+      env: "prod"
+      amount: 4000.0
+    - team: "ml"
+      env: "prod"
+      amount: 6000.0
+    - team: "frontend"
+      env: "prod"
+      amount: 3000.0
+    - team: "*"
+      env: "staging"
+      amount: 1000.0
+    - team: "*"
+      env: "dev"
+      amount: 500.0
+
+# 운영 중 조정이 필요한 임계값은 DuckDB platform_settings 테이블에서 관리합니다.
+# 아래 값은 platform_settings 테이블의 초기 기본값(seed)으로 사용됩니다.
+operational_defaults:
+  anomaly_zscore_warning: 2.0
+  anomaly_zscore_critical: 3.0
+  variance_over_pct: 20.0         # 이 % 초과 시 'over'
+  variance_under_pct: -20.0       # 이 % 미만 시 'under'
+  alert_critical_pct: 50.0        # 절대값이 이 % 이상이면 'critical'
+  reporting_lookback_days: 30
+  reporting_top_resources_limit: 20
+  reporting_top_cost_units_limit: 10

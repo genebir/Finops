@@ -6,7 +6,11 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
-from dagster_project.assets.infracost_forecast import _parse_forecast_records
+from dagster_project.assets.infracost_forecast import (
+    _parse_forecast_records,
+    _stub_forecast_records,
+    _write_forecast_rows,
+)
 from dagster_project.resources.duckdb_io import DuckDBResource
 from dagster_project.resources.iceberg_catalog import IcebergCatalogResource
 
@@ -78,6 +82,33 @@ class TestParseForecastEdgeCases:
         assert records[0].monthly_cost == Decimal("5.5")
 
 
+class TestWriteForecastRows:
+    def test_write_forecast_rows_creates_table(self) -> None:
+        import duckdb
+        conn = duckdb.connect()
+        rows = [
+            {
+                "resource_address": "aws_instance.web_1",
+                "monthly_cost": "100.0",
+                "hourly_cost": "0.14",
+                "currency": "USD",
+                "forecast_generated_at": "2024-01-01T00:00:00+00:00",
+            }
+        ]
+        _write_forecast_rows(conn, rows)
+        result = conn.execute("SELECT COUNT(*) FROM dim_forecast").fetchone()
+        assert result is not None
+        assert result[0] == 1
+
+    def test_write_forecast_rows_empty_creates_empty_table(self) -> None:
+        import duckdb
+        conn = duckdb.connect()
+        _write_forecast_rows(conn, [])
+        result = conn.execute("SELECT COUNT(*) FROM dim_forecast").fetchone()
+        assert result is not None
+        assert result[0] == 0
+
+
 class TestDuckDBResource:
     def test_execute_runs_without_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -99,6 +130,26 @@ class TestDuckDBResource:
                 assert result[0] == 1
 
 
+class TestStubForecastRecords:
+    def test_stub_returns_nonempty_list(self) -> None:
+        records = _stub_forecast_records()
+        assert len(records) > 0
+
+    def test_stub_has_positive_monthly_cost(self) -> None:
+        records = _stub_forecast_records()
+        for rec in records:
+            assert rec.monthly_cost > Decimal("0")
+            assert rec.hourly_cost > Decimal("0")
+            assert rec.currency == "USD"
+
+    def test_stub_resource_ids_match_terraform(self) -> None:
+        from dagster_project.generators.aws_cur_generator import _TERRAFORM_RESOURCES
+        records = _stub_forecast_records()
+        record_addresses = {r.resource_address for r in records}
+        for res in _TERRAFORM_RESOURCES:
+            assert res.resource_id in record_addresses
+
+
 class TestIcebergCatalogResource:
     def test_ensure_namespace_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -108,3 +159,21 @@ class TestIcebergCatalogResource:
             )
             catalog.ensure_namespace("test_ns")
             catalog.ensure_namespace("test_ns")  # 두 번 호출해도 예외 없어야 함
+
+    def test_ensure_table_with_properties(self) -> None:
+        """properties 파라미터 경로 커버."""
+        from pyiceberg.schema import Schema
+        from pyiceberg.types import NestedField, StringType
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            catalog = IcebergCatalogResource(
+                warehouse_path=str(Path(tmpdir) / "warehouse"),
+                catalog_db_path=str(Path(tmpdir) / "catalog.db"),
+            )
+            schema = Schema(NestedField(1, "name", StringType(), required=False))
+            table = catalog.ensure_table(
+                "test_ns.test_table",
+                schema=schema,
+                properties={"write.format.default": "parquet"},
+            )
+            assert table is not None

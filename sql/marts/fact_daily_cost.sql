@@ -1,31 +1,20 @@
-CREATE OR REPLACE TABLE fact_daily_cost AS
-SELECT
-    CAST(strftime(ChargePeriodStart, '%Y-%m-%d') AS DATE) AS charge_date,
-    ResourceId                                             AS resource_id,
-    ResourceName                                           AS resource_name,
-    ResourceType                                           AS resource_type,
-    ServiceName                                            AS service_name,
-    ServiceCategory                                        AS service_category,
-    RegionId                                               AS region_id,
-    team,
-    product,
-    env,
-    cost_unit_key,
-    SUM(CAST(EffectiveCost AS DECIMAL(18, 6)))             AS effective_cost,
-    SUM(CAST(BilledCost AS DECIMAL(18, 6)))                AS billed_cost,
-    SUM(CAST(ListCost AS DECIMAL(18, 6)))                  AS list_cost,
-    COUNT(*)                                               AS record_count
-FROM silver_focus
-GROUP BY
-    charge_date,
-    resource_id,
-    resource_name,
-    resource_type,
-    service_name,
-    service_category,
-    region_id,
-    team,
-    product,
-    env,
-    cost_unit_key
-ORDER BY charge_date, effective_cost DESC;
+-- Phase 3: provider 컬럼 추가로 멀티 클라우드 지원
+-- gold_marts / gold_marts_gcp에서 파티션 키별 DELETE + INSERT로 멱등성 보장
+CREATE TABLE IF NOT EXISTS fact_daily_cost (
+    provider         VARCHAR        NOT NULL DEFAULT 'aws',
+    charge_date      DATE           NOT NULL,
+    resource_id      VARCHAR        NOT NULL,
+    resource_name    VARCHAR,
+    resource_type    VARCHAR,
+    service_name     VARCHAR,
+    service_category VARCHAR,
+    region_id        VARCHAR,
+    team             VARCHAR        NOT NULL,
+    product          VARCHAR        NOT NULL,
+    env              VARCHAR        NOT NULL,
+    cost_unit_key    VARCHAR        NOT NULL,
+    effective_cost   DECIMAL(18, 6) NOT NULL,
+    billed_cost      DECIMAL(18, 6) NOT NULL,
+    list_cost        DECIMAL(18, 6) NOT NULL,
+    record_count     BIGINT         NOT NULL
+);

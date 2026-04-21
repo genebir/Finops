@@ -25,6 +25,8 @@ class ForecastRecord:
     hourly_cost: Decimal
     currency: str
     forecast_generated_at: datetime
+    lower_bound_monthly_cost: Decimal = Decimal("0")
+    upper_bound_monthly_cost: Decimal = Decimal("0")
 
 
 class ForecastProvider(Protocol):

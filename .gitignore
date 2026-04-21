@@ -20,6 +20,9 @@ build/
 # Environment
 .env
 
+# 로컬 설정 재정의 (config/settings.yaml의 로컬 오버라이드)
+config/settings.local.yaml
+
 # IDE
 .vscode/
 .idea/

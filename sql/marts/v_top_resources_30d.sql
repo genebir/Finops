@@ -14,7 +14,7 @@ SELECT
     SUM(billed_cost)    AS total_billed_cost,
     COUNT(DISTINCT charge_date) AS active_days
 FROM fact_daily_cost
-WHERE charge_date >= CURRENT_DATE - INTERVAL '30' DAY
+WHERE charge_date >= CURRENT_DATE - INTERVAL {{lookback_days}} DAY
 GROUP BY
     resource_id,
     resource_name,
@@ -27,4 +27,4 @@ GROUP BY
     product,
     env
 ORDER BY total_effective_cost DESC
-LIMIT 20;
+LIMIT {{top_resources_limit}};

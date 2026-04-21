@@ -6,10 +6,14 @@ from datetime import date
 from dagster import AssetExecutionContext, MonthlyPartitionsDefinition, asset
 from pydantic import ValidationError
 
+from ..config import load_config
 from ..generators.aws_cur_generator import AwsCurGenerator
 from ..schemas.focus_v1 import FocusRecord
 
-MONTHLY_PARTITIONS = MonthlyPartitionsDefinition(start_date="2024-01-01")
+_cfg = load_config()
+MONTHLY_PARTITIONS = MonthlyPartitionsDefinition(
+    start_date=_cfg.dagster.partition_start_date
+)
 
 
 @asset(

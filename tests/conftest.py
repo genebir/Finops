@@ -5,7 +5,16 @@ from decimal import Decimal
 
 import pytest
 
+from dagster_project.config import load_config
 from dagster_project.schemas.focus_v1 import ChargeCategory, FocusRecord, ServiceCategory
+
+
+@pytest.fixture
+def clear_config_cache():
+    """load_config() lru_cache를 초기화한다. 설정을 monkeypatch할 테스트에 사용."""
+    load_config.cache_clear()
+    yield
+    load_config.cache_clear()
 
 
 @pytest.fixture

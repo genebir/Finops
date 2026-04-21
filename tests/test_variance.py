@@ -77,10 +77,20 @@ def _setup_duckdb_with_data(
         )
 
 
-def _run_variance_query(conn: duckdb.DuckDBPyConnection, billing_month: str) -> list[dict]:
+def _run_variance_query(
+    conn: duckdb.DuckDBPyConnection,
+    billing_month: str,
+    over_pct: float = 20.0,
+    under_pct: float = 20.0,
+) -> list[dict]:
     from pathlib import Path
 
-    sql = (Path(__file__).parent.parent / "sql" / "marts" / "v_variance.sql").read_text()
+    sql = (
+        (Path(__file__).parent.parent / "sql" / "marts" / "v_variance.sql")
+        .read_text()
+        .replace("{{variance_over_pct}}", str(over_pct))
+        .replace("{{variance_under_pct}}", str(under_pct))
+    )
     conn.execute(sql)
     rows = conn.execute(f"""
         SELECT resource_id, forecast_monthly, actual_mtd, variance_pct, status

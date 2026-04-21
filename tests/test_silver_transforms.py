@@ -4,7 +4,7 @@ import json
 
 import polars as pl
 
-from dagster_project.assets.silver_focus import _flatten_tags
+from dagster_project.utils.silver_transforms import flatten_tags as _flatten_tags
 
 
 def _make_df(tags_list: list[dict | None]) -> pl.DataFrame:
@@ -77,3 +77,17 @@ class TestFlattenTags:
         result = _flatten_tags(df)
         assert result["team"][0] == "frontend"
         assert "owner" not in result.columns
+
+    def test_invalid_json_defaults_unknown(self) -> None:
+        """Tags가 유효하지 않은 JSON이면 모두 unknown."""
+        import polars as pl
+        df = pl.DataFrame({
+            "Tags": ["{invalid_json"],
+            "ChargePeriodStart": ["2024-01-01T00:00:00+00:00"],
+        }).with_columns(
+            pl.col("ChargePeriodStart").str.to_datetime(time_unit="us", time_zone="UTC")
+        )
+        result = _flatten_tags(df)
+        assert result["team"][0] == "unknown"
+        assert result["product"][0] == "unknown"
+        assert result["env"][0] == "unknown"

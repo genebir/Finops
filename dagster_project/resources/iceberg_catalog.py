@@ -21,8 +21,11 @@ class IcebergCatalogResource(ConfigurableResource):
     def _get_catalog(self) -> SqlCatalog:
         Path(self.warehouse_path).mkdir(parents=True, exist_ok=True)
         Path(self.catalog_db_path).parent.mkdir(parents=True, exist_ok=True)
+        from ..config import load_config  # noqa: PLC0415
+
+        catalog_name = load_config().iceberg.catalog_name
         return SqlCatalog(
-            "finops",
+            catalog_name,
             **{
                 "uri": f"sqlite:///{self.catalog_db_path}",
                 "warehouse": f"file://{Path(self.warehouse_path).resolve()}",

@@ -9,11 +9,13 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+from ..config import load_config
 from ..core.cost_unit import CostUnit
 from ..schemas.focus_v1 import ChargeCategory, FocusRecord, ServiceCategory
 
-_BILLING_ACCOUNT_ID = "123456789012"
-_SUB_ACCOUNT_ID = "987654321098"
+_cfg = load_config()
+_BILLING_ACCOUNT_ID = _cfg.cur_generator.billing_account_id
+_SUB_ACCOUNT_ID = _cfg.cur_generator.sub_account_id
 
 _REGIONS = [
     ("us-east-1", "US East (N. Virginia)", "us-east-1a"),
@@ -218,8 +220,9 @@ def _build_extra_resources(rng: random.Random, count: int) -> list[_ResourceDef]
 
         is_anomaly = i in anomaly_indices
         if is_anomaly:
-            # 평균 대비 5~8배 이상치
-            base_cost = base_cost * Decimal(str(round(rng.uniform(5.0, 8.0), 2)))
+            _low = _cfg.cur_generator.anomaly_multiplier_low
+            _high = _cfg.cur_generator.anomaly_multiplier_high
+            base_cost = base_cost * Decimal(str(round(rng.uniform(_low, _high), 2)))
 
         region_id, region_name, az = rng.choice(_REGIONS)
         tags = {
@@ -261,10 +264,12 @@ def _make_charge_record(
     charge_start = datetime(day.year, day.month, day.day, 0, 0, 0, tzinfo=UTC)
     charge_end = charge_start + timedelta(hours=24)
 
-    # 일별 비용: base ± 15% 변동
-    variation = Decimal(str(round(rng.uniform(0.85, 1.15), 6)))
+    _var_low = _cfg.cur_generator.cost_variation_low
+    _var_high = _cfg.cur_generator.cost_variation_high
+    variation = Decimal(str(round(rng.uniform(_var_low, _var_high), 6)))
     effective_cost = (res.base_daily_cost * variation).quantize(Decimal("0.000001"))
-    list_cost = (effective_cost * Decimal("1.15")).quantize(Decimal("0.000001"))
+    _markup = Decimal(str(_cfg.cur_generator.list_price_markup))
+    list_cost = (effective_cost * _markup).quantize(Decimal("0.000001"))
     billed_cost = effective_cost
     contracted_cost = effective_cost
 
@@ -315,13 +320,21 @@ class AwsCurGenerator:
 
     def __init__(self, seed: int | None = None) -> None:
         env_seed = os.environ.get("CUR_SEED")
-        self._seed = int(env_seed) if env_seed is not None else (seed if seed is not None else 42)
+        if env_seed is not None:
+            self._seed = int(env_seed)
+        elif seed is not None:
+            self._seed = seed
+        else:
+            self._seed = _cfg.cur_generator.seed
 
     def generate(self, period_start: date, period_end: date) -> Iterator[FocusRecord]:
         """period_start ~ period_end(미포함) 기간의 FOCUS 레코드를 yield."""
         rng = random.Random(self._seed)
 
-        extra_count = rng.randint(5, 20)
+        extra_count = rng.randint(
+            _cfg.cur_generator.extra_resources_min,
+            _cfg.cur_generator.extra_resources_max,
+        )
         extra_resources = _build_extra_resources(rng, extra_count)
         all_resources = _TERRAFORM_RESOURCES + extra_resources
 
