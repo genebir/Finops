@@ -2,7 +2,7 @@
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
 > Phase 1 → … → Phase 40 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 40.1 완료 — 프로덕션 준비 (i18n 완성, 페이지 메타데이터, 레이아웃 표준화) + `scripts/setup.py` 멱등 셋업 스크립트, **631 tests pass**.
+> **현재 상태:** Phase 41 완료 — Service Detail 드릴다운 `/api/services/{service_name}` + `/services/[service]` 페이지 + Services 링크 연결, **641 tests pass**.
 
 ---
 
@@ -1386,9 +1386,33 @@ uv run mypy dagster_project
 - `test_tag_compliance.py` — `test_tag_compliance_rank_sequence` assertion 완화 (실제 데이터 호환)
 - **631 tests pass** ✅
 
+### Phase 41 — Service Detail 드릴다운
+
+- `api/routers/service_detail.py` — `GET /api/services/{service_name}?months=N`
+  - 404 반환 (서비스 미존재 시)
+  - `monthly_trend`: 최근 N개월 서비스별 비용 + 리소스 수
+  - `by_team`: 당월 팀별 비용 Top-10 + pct
+  - `by_provider`: 당월 provider별 비용 + pct
+  - `by_env`: 당월 환경별 비용 + pct
+  - `top_resources`: 당월 리소스별 비용 Top-10
+  - `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, team_count
+- `api/main.py` — `service_detail` 라우터 등록
+- `api/routers/__init__.py` — `service_detail` 추가
+- `web-app/app/(dashboard)/services/[service]/page.tsx` — Server Component
+  - ← Services 뒤로 링크
+  - KPI 카드 4개 (당월 비용, MoM%, 리소스 수, 팀 수)
+  - 6개월 trend sparkline 바 차트
+  - 환경별 + Provider별 TrendBar
+  - By Team 표 (팀명 → `/teams/{team}` 링크) + Top Resources 표 (resource_id → `/resources/{id}` 링크)
+- `web-app/app/(dashboard)/services/page.tsx` — 서비스명에 `/services/{service}` 링크 추가
+- `web-app/lib/i18n/translations.ts` — service_detail 관련 i18n 키 추가
+- `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
+
+- **641 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 40.1 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 41 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 
@@ -1424,6 +1448,7 @@ uv run mypy dagster_project
 | `/cloud-config` | `/api/cloud-config`, `/api/cloud-config/status` | AWS/GCP/Azure 연결 설정 인라인 편집 |
 | `/resources/[id]` | `/api/resources/{resource_id}` | 리소스 드릴다운: 일별 비용, 월별 히스토리, 이상치 |
 | `/teams/[team]` | `/api/teams/{team}` | 팀 드릴다운: 트렌드, 서비스/환경/provider 분석, 리소스 |
+| `/services/[service]` | `/api/services/{service_name}` | 서비스 드릴다운: 트렌드, 팀/환경/provider 분석, 리소스 |
 
 ### 구현 완료된 API 엔드포인트 전체 목록
 
@@ -1456,6 +1481,7 @@ uv run mypy dagster_project
 | `GET /api/resources/{resource_id}` | `routers/resource_detail.py` | `test_resource_detail.py` |
 | `GET /api/leaderboard` | `routers/leaderboard.py` | `test_leaderboard.py` |
 | `GET /api/service-breakdown` | `routers/service_breakdown.py` | — |
+| `GET /api/services/{service_name}` | `routers/service_detail.py` | `test_api_service_detail.py` |
 | `GET /api/budget-forecast` | `routers/budget_forecast.py` | `test_budget_forecast.py` |
 | `GET /api/env-breakdown` | `routers/env_breakdown.py` | `test_env_breakdown.py` |
 | `GET /api/tag-compliance` | `routers/tag_compliance.py` | `test_tag_compliance.py` |

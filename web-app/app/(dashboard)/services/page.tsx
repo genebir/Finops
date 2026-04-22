@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { API_BASE } from "../../../lib/api";
 import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
@@ -117,8 +118,13 @@ export default async function ServicesPage() {
             <tbody>
               {by_service.map((svc, idx, arr) => (
                 <tr key={idx} style={{ borderBottom: idx < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <td style={{ padding: "10px 0", color: "var(--text-primary)", fontSize: "13px", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {svc.service_name}
+                  <td style={{ padding: "10px 0", fontSize: "13px", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <Link
+                      href={`/services/${encodeURIComponent(svc.service_name)}`}
+                      style={{ textDecoration: "none", color: "var(--text-primary)", fontWeight: 500 }}
+                    >
+                      {svc.service_name}
+                    </Link>
                   </td>
                   <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)", textAlign: "center" }}>{svc.category}</td>
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>

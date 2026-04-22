@@ -30,6 +30,7 @@ from .routers import (
     resource_detail,
     savings,
     service_breakdown,
+    service_detail,
     budget,
     burn_rate,
     chargeback,
@@ -97,6 +98,7 @@ app.include_router(cost_risk.router)
 app.include_router(resource_detail.router)
 app.include_router(leaderboard.router)
 app.include_router(service_breakdown.router)
+app.include_router(service_detail.router)
 app.include_router(budget_forecast.router)
 app.include_router(env_breakdown.router)
 app.include_router(tag_compliance.router)
