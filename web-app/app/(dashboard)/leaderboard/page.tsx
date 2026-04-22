@@ -4,7 +4,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Leaderboard — FinOps" };
 
 interface LeaderboardItem {
@@ -53,6 +55,7 @@ function PctBar({ pct }: { pct: number }) {
 const MEDALS = ["1st", "2nd", "3rd"];
 
 export default async function LeaderboardPage() {
+  const t = getT();
   let data: LeaderboardData;
   try {
     data = await fetchLeaderboard();
@@ -65,43 +68,51 @@ export default async function LeaderboardPage() {
     ? ((summary.total_curr - summary.total_prev) / summary.total_prev * 100)
     : null;
 
-  const headers = ["#", "Team", "Curr Cost", "Prev Cost", "MoM", "Share", "Resources"];
+  const HEADERS = [
+    { key: "th.rank", align: "center" },
+    { key: "th.team", align: "left" },
+    { key: "th.curr_cost", align: "right" },
+    { key: "th.prev_cost", align: "right" },
+    { key: "th.mom", align: "center" },
+    { key: "th.share", align: "left" },
+    { key: "th.resources", align: "center" },
+  ] as const;
 
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Team Leaderboard"
-        description={`${billing_month} vs ${prev_month} — ranked by total spend`}
+        title={t("page.leaderboard.title")}
+        description={`${billing_month} ${t("misc.vs")} ${prev_month}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Total Spend"
+          label={t("label.total_spend")}
           value={`$${summary.total_curr.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
           delta={overallMom !== null ? { value: overallMom, context: "cost" } : undefined}
         />
         <MetricCard
-          label="Teams"
+          label={t("label.teams")}
           value={String(summary.team_count)}
         />
         <MetricCard
-          label="Prev Month"
+          label={t("label.prev_month")}
           value={`$${summary.total_prev.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
           valueColor="var(--text-secondary)"
         />
       </div>
 
       <Card>
-        <CardHeader>Team Rankings</CardHeader>
+        <CardHeader>{t("section.team_rankings")}</CardHeader>
         {items.length === 0 ? (
-          <EmptyState title="No leaderboard data" description="Materialize gold_marts assets first." />
+          <EmptyState title={t("empty.no_leaderboard")} description={t("empty.run_anomaly")} />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {headers.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: idx >= 2 ? "right" : "left",
+                {HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -111,7 +122,7 @@ export default async function LeaderboardPage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -119,7 +130,7 @@ export default async function LeaderboardPage() {
             <tbody>
               {items.map((item, i, arr) => (
                 <tr key={item.rank} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
-                  <td style={{ padding: "10px 0" }}>
+                  <td style={{ padding: "10px 0", textAlign: "center" }}>
                     <span style={{ fontSize: "11px", fontWeight: 700, color: item.rank <= 3 ? "var(--text-primary)" : "var(--text-tertiary)" }}>
                       {item.rank <= 3 ? MEDALS[item.rank - 1] : item.rank}
                     </span>
@@ -142,13 +153,13 @@ export default async function LeaderboardPage() {
                       ${item.prev_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <MomBadge pct={item.mom_change_pct} />
                   </td>
-                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 8px" }}>
                     <PctBar pct={item.pct_of_total} />
                   </td>
-                  <td style={{ padding: "10px 0 10px 8px", textAlign: "right", color: "var(--text-secondary)", fontSize: "13px" }}>
+                  <td style={{ padding: "10px 0 10px 8px", textAlign: "center", color: "var(--text-secondary)", fontSize: "13px" }}>
                     {item.resource_count}
                   </td>
                 </tr>

@@ -3,6 +3,11 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Tag Compliance — FinOps" };
 
 interface TeamRow {
   team: string;
@@ -48,13 +53,13 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-function ScoreBadge({ score }: { score: number }) {
-  const [color, label] =
+function ScoreBadge({ score, label }: { score: number; label: string }) {
+  const color =
     score >= 90
-      ? ["var(--status-healthy)", "High"]
+      ? "var(--status-healthy)"
       : score >= 70
-      ? ["var(--status-warning)", "Medium"]
-      : ["var(--status-critical)", "Low"];
+      ? "var(--status-warning)"
+      : "var(--status-critical)";
   return (
     <span style={{
       display: "inline-block", padding: "2px 8px", borderRadius: "4px",
@@ -87,9 +92,19 @@ function ProviderTag({ provider }: { provider: string }) {
   );
 }
 
-const tableHeaders = ["#", "Team", "Provider", "Resources", "Tagged", "Violations", "Score", "Grade"];
+const TABLE_HEADERS = [
+  { key: "th.rank", align: "center" },
+  { key: "th.team", align: "left" },
+  { key: "th.provider", align: "center" },
+  { key: "th.resources", align: "center" },
+  { key: "th.tagged", align: "center" },
+  { key: "th.violations", align: "center" },
+  { key: "th.score", align: "center" },
+  { key: "th.grade", align: "center" },
+] as const;
 
 export default async function TagCompliancePage() {
+  const t = getT();
   let data: TagComplianceData;
   try {
     data = await fetchTagCompliance();
@@ -107,47 +122,47 @@ export default async function TagCompliancePage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Tag Compliance"
-        description={`${data.billing_month} — team · provider tag completeness scores`}
+        title={t("page.tag_compliance.title")}
+        description={`${data.billing_month} — ${t("page.tag_compliance.desc")}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Avg Compliance Score"
+          label={t("label.avg_compliance")}
           value={`${summary.avg_score}`}
           sub="/ 100"
           valueColor={avgScoreColor}
         />
         <MetricCard
-          label="Perfect Teams"
+          label={t("label.perfect_teams")}
           value={String(summary.perfect_count)}
           sub="≥ 99%"
           valueColor="var(--status-healthy)"
         />
         <MetricCard
-          label="Below Threshold"
+          label={t("label.below_threshold")}
           value={String(summary.below_threshold_count)}
           sub="< 70%"
           valueColor="var(--status-critical)"
         />
         <MetricCard
-          label="Total Teams"
+          label={t("label.total_teams")}
           value={String(summary.total_teams)}
-          sub="tracked"
+          sub={t("misc.tracked")}
         />
       </div>
 
       <Card>
-        <CardHeader>Team Compliance Scores</CardHeader>
+        <CardHeader>{t("section.team_compliance_scores")}</CardHeader>
         {teams.length === 0 ? (
-          <EmptyState title="No compliance data" description="Run the tag_compliance_score Dagster asset first." />
+          <EmptyState title={t("empty.no_compliance")} description={t("empty.run_tag_compliance")} />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {tableHeaders.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: idx <= 1 ? "left" : "center",
+                {TABLE_HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -157,7 +172,7 @@ export default async function TagCompliancePage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -190,7 +205,7 @@ export default async function TagCompliancePage() {
                     <ScoreBar score={row.compliance_score} />
                   </td>
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
-                    <ScoreBadge score={row.compliance_score} />
+                    <ScoreBadge score={row.compliance_score} label={row.compliance_score >= 90 ? t("misc.high") : row.compliance_score >= 70 ? t("misc.medium") : t("misc.low")} />
                   </td>
                 </tr>
               ))}

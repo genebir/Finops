@@ -6,10 +6,13 @@ import { ErrorState } from "@/components/primitives/States";
 import { ProviderBadge } from "@/components/status/SeverityBadge";
 import { api, API_BASE } from "@/lib/api";
 import { formatCurrency } from "@/lib/formatters";
+import { getT } from "@/lib/i18n/server";
 import type { TopResource } from "@/lib/types";
 import TeamCostBars from "./TeamCostBars";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Overview — FinOps" };
 
 interface ProviderCost {
   provider: string;
@@ -51,6 +54,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 };
 
 export default async function OverviewPage() {
+  const t = getT();
   let data;
   try {
     data = await api.overview();
@@ -68,11 +72,10 @@ export default async function OverviewPage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Overview"
+        title={t("page.overview.title")}
         description={`${data.period_start} – ${data.period_end}`}
       />
 
-      {/* KPI cards */}
       <div
         style={{
           display: "grid",
@@ -82,40 +85,36 @@ export default async function OverviewPage() {
         }}
       >
         <MetricCard
-          label="Total Cost (MTD)"
+          label={t("label.total_cost_mtd")}
           value={formatCurrency(data.total_cost, { compact: true })}
           sub={`${data.active_days} days`}
         />
         <MetricCard
-          label="Resources"
+          label={t("label.resources")}
           value={String(data.resource_count)}
-          sub="active this period"
         />
         <MetricCard
-          label="Anomalies Detected"
+          label={t("label.anomalies_detected")}
           value={String(data.anomaly_count)}
           valueColor={data.anomaly_count > 0 ? "var(--status-critical)" : "var(--status-healthy)"}
         />
         <MetricCard
-          label="Teams with Spend"
+          label={t("label.teams_with_spend")}
           value={String(data.cost_by_team.length)}
         />
       </div>
 
-      {/* Row 1: Team breakdown + Provider breakdown */}
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "20px", marginBottom: "20px" }}>
-        {/* Team breakdown */}
         <Card>
-          <CardHeader>Cost by Team</CardHeader>
+          <CardHeader>{t("section.cost_by_team")}</CardHeader>
           <TeamCostBars items={data.cost_by_team} />
         </Card>
 
-        {/* Provider breakdown */}
         <Card>
-          <CardHeader>By Cloud Provider</CardHeader>
+          <CardHeader>{t("section.by_cloud_provider")}</CardHeader>
           {providerCosts.length === 0 ? (
             <p style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
-              No provider data available.
+              {t("misc.no_provider_data")}
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -148,19 +147,22 @@ export default async function OverviewPage() {
         </Card>
       </div>
 
-      {/* Row 2: Top resources + Cost trend sparkline */}
       <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: "20px" }}>
-        {/* Top resources */}
         <Card>
-          <CardHeader>Top Resources</CardHeader>
+          <CardHeader>{t("section.top_resources")}</CardHeader>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Resource", "Service", "Team", "Cost"].map((h, idx, arr) => (
+                {([
+                  { key: "th.resource", align: "left" },
+                  { key: "th.service", align: "left" },
+                  { key: "th.team", align: "center" },
+                  { key: "th.cost", align: "right" },
+                ] as const).map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign: h === "Cost" ? "right" : "left",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -175,7 +177,7 @@ export default async function OverviewPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -204,22 +206,10 @@ export default async function OverviewPage() {
                       </code>
                     </Link>
                   </td>
-                  <td
-                    style={{
-                      padding: "10px 8px",
-                      fontSize: "12px",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
+                  <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>
                     {r.service_name}
                   </td>
-                  <td
-                    style={{
-                      padding: "10px 8px",
-                      fontSize: "12px",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
+                  <td style={{ padding: "10px 8px", textAlign: "center", fontSize: "12px", color: "var(--text-secondary)" }}>
                     {r.team}
                   </td>
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
@@ -237,12 +227,11 @@ export default async function OverviewPage() {
           </table>
         </Card>
 
-        {/* Recent cost trend */}
         <Card>
-          <CardHeader>Recent Trend (6 months)</CardHeader>
+          <CardHeader>{t("section.recent_trend")}</CardHeader>
           {trendSeries.length === 0 ? (
             <p style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
-              Run the cost_trend asset in Dagster.
+              {t("misc.run_asset_hint")}
             </p>
           ) : (
             <div>
@@ -306,7 +295,7 @@ export default async function OverviewPage() {
                     fontWeight: 500,
                   }}
                 >
-                  View full trend →
+                  {t("action.view_full_trend")}
                 </Link>
               </div>
             </div>

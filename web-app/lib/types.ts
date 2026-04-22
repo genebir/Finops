@@ -173,6 +173,34 @@ export interface AlertHistoryData {
   items: AlertHistoryItem[]; total: number; summary: AlertSummary;
 }
 
+export interface AssetInfo {
+  key: string;
+  group: string | null;
+  description: string | null;
+  has_partitions: boolean;
+}
+export interface AssetListResponse {
+  assets: AssetInfo[];
+  total: number;
+}
+export interface PipelinePreset {
+  name: string;
+  description: string;
+  assets: string[];
+}
+export interface TriggerResult {
+  asset_key: string;
+  success: boolean;
+  error: string | null;
+  duration_sec: number | null;
+}
+export interface TriggerResponse {
+  results: TriggerResult[];
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
 export interface DqCheck {
   id: number;
   checked_at: string | null;

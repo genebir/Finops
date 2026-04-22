@@ -6,8 +6,13 @@ import { SeverityBadge } from "@/components/status/SeverityBadge";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/formatters";
 import type { BudgetItem } from "@/lib/types";
+import { getT } from "@/lib/i18n/server";
 
 import BudgetManager from "./BudgetManager";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Budget — FinOps" };
 
 function BudgetGauge({ usedPct, status }: { usedPct: number; status: string }) {
   const colorMap: Record<string, string> = {
@@ -52,6 +57,7 @@ function BudgetGauge({ usedPct, status }: { usedPct: number; status: string }) {
 }
 
 export default async function BudgetPage() {
+  const t = getT();
   let data, filters;
   try {
     [data, filters] = await Promise.all([api.budget(), api.filters()]);
@@ -63,13 +69,13 @@ export default async function BudgetPage() {
   const hasBudget = data.total_budget > 0;
 
   return (
-    <div style={{ maxWidth: "1100px" }}>
+    <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Budget"
+        title={t("page.budget.title")}
         description={
           hasBudget
-            ? `Total budget ${formatCurrency(data.total_budget)}`
-            : "Add budget entries below or run the budget_alerts asset in Dagster."
+            ? `${t("label.total_budget")} ${formatCurrency(data.total_budget)}`
+            : t("empty.add_budget_hint")
         }
       />
 
@@ -82,15 +88,15 @@ export default async function BudgetPage() {
         }}
       >
         <MetricCard
-          label="Total Budget"
+          label={t("label.total_budget")}
           value={hasBudget ? formatCurrency(data.total_budget, { compact: true }) : "—"}
         />
         <MetricCard
-          label="Actual Spend"
+          label={t("label.actual_spend")}
           value={formatCurrency(data.total_actual, { compact: true })}
         />
         <MetricCard
-          label="Over Budget"
+          label={t("label.over_budget")}
           value={String(overCount)}
           valueColor={overCount > 0 ? "var(--status-critical)" : "var(--status-healthy)"}
         />
@@ -98,21 +104,28 @@ export default async function BudgetPage() {
 
       <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         <Card>
-          <CardHeader>Budget Status by Team</CardHeader>
+          <CardHeader>{t("section.budget_status")}</CardHeader>
           {data.items.length === 0 ? (
             <EmptyState
-              title="No budget status yet"
-              description="Add budget entries below, then run budget_alerts in Dagster to compute status."
+              title={t("empty.no_budget")}
+              description={t("empty.add_budget_hint")}
             />
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Team", "Env", "Budget", "Actual", "Usage", "Status"].map((h, idx, arr) => (
+                  {([
+                    { key: "th.team", align: "left" },
+                    { key: "th.env", align: "center" },
+                    { key: "th.budget", align: "right" },
+                    { key: "th.actual", align: "right" },
+                    { key: "th.usage", align: "left" },
+                    { key: "th.status", align: "center" },
+                  ] as const).map((col, idx, arr) => (
                     <th
-                      key={h}
+                      key={col.key}
                       style={{
-                        textAlign: ["Budget", "Actual"].includes(h) ? "right" : ["Env", "Status"].includes(h) ? "center" : "left",
+                        textAlign: col.align,
                         fontSize: "10px",
                         fontWeight: 600,
                         fontFamily: "Inter, sans-serif",
@@ -127,7 +140,7 @@ export default async function BudgetPage() {
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
-                      {h}
+                      {t(col.key)}
                     </th>
                   ))}
                 </tr>
@@ -166,7 +179,7 @@ export default async function BudgetPage() {
                       {item.budget_amount > 0 ? (
                         <BudgetGauge usedPct={item.used_pct} status={item.status} />
                       ) : (
-                        <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>No budget set</span>
+                        <span style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>{t("empty.no_budget_set")}</span>
                       )}
                     </td>
                     <td style={{ padding: "12px 0 12px 8px", textAlign: "center" }}>

@@ -6,6 +6,8 @@ import AllocationClient from "./AllocationClient";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Cost Allocation — FinOps" };
+
 async function fetchRules() {
   const res = await fetch(`${API_BASE}/api/cost-allocation/rules`, { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch allocation rules");

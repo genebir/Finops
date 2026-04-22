@@ -6,6 +6,8 @@ import CloudConfigClient from "./CloudConfigClient";
 
 export const dynamic = "force-dynamic";
 
+export const metadata = { title: "Cloud Config — FinOps" };
+
 interface ProviderStatus {
   enabled: boolean;
   configured: boolean;

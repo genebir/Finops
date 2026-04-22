@@ -2,7 +2,7 @@
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
 > Phase 1 → … → Phase 40 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 40 완료 — Team Detail API `/api/teams/{team}` + 드릴다운 페이지 `/teams/[team]` + Leaderboard 링크 연결, **601 tests pass**.
+> **현재 상태:** Phase 40.1 완료 — 프로덕션 준비 (i18n 완성, 페이지 메타데이터, 레이아웃 표준화) + `scripts/setup.py` 멱등 셋업 스크립트, **631 tests pass**.
 
 ---
 
@@ -184,11 +184,21 @@ finops-platform/
 ├── scripts/
 │   ├── dashboard.py               # Rich 터미널 대시보드
 │   ├── run_phase2.py              # Phase 2 수동 실행 헬퍼
-│   └── streamlit_app.py           # Streamlit 웹 대시보드 (6탭)  [Phase 4]
+│   ├── streamlit_app.py           # Streamlit 웹 대시보드 (6탭)  [Phase 4]
+│   ├── init_db.py                 # DB 스키마 부트스트랩 CLI     [Phase 12]
+│   └── setup.py                   # 멱등 개발환경 셋업 (--all로 전체 부트스트랩)  [Phase 40.1]
+├── api/                           # FastAPI 백엔드              [Phase 8.1+]
+│   ├── main.py                    # 앱 엔트리 (CORS, 라우터 등록)
+│   ├── deps.py                    # db_read/db_write 컨텍스트매니저
+│   ├── models/                    # Pydantic 요청/응답 모델
+│   └── routers/                   # 도메인별 API 라우터 (30+개)
+├── web-app/                       # Next.js 14 대시보드          [Phase 8.1+]
+│   ├── app/(dashboard)/           # 30개 페이지 (i18n EN/KO)
+│   ├── components/                # 공유 컴포넌트 (Card, MetricCard, Sidebar 등)
+│   └── lib/                       # API 클라이언트, i18n, 타입
 ├── data/                          # gitignored
 │   ├── warehouse/                 # Iceberg 데이터
 │   ├── catalog.db                 # SqlCatalog SQLite
-│   ├── marts.duckdb               # DuckDB 파일
 │   └── reports/                   # 출력 CSV
 └── tests/
     ├── conftest.py
@@ -733,6 +743,15 @@ module_name = "dagster_project.definitions"
 uv sync
 cp .env.example .env
 
+# 원커맨드 개발환경 셋업 (테이블 생성 + 시드 + asset 실행 + 뷰 생성)
+uv run python scripts/setup.py --all
+# 또는 개별 단계:
+uv run python scripts/setup.py --status        # 현재 상태 확인
+uv run python scripts/setup.py --tables        # 테이블만 생성
+uv run python scripts/setup.py --seed          # 설정·예산 시드
+uv run python scripts/setup.py --materialize   # Dagster asset 실행
+uv run python scripts/setup.py --views         # SQL 뷰 생성
+
 # Infracost CLI 설치 (선택)
 curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
 infracost configure set api_key <YOUR_KEY>
@@ -741,10 +760,14 @@ infracost configure set api_key <YOUR_KEY>
 uv run dagster dev
 # → http://localhost:3000 → 전체 assets materialize
 
+# 모니터링 대시보드 (Next.js + FastAPI)
+cd web-app && npm run dev    # → http://localhost:3002
+uv run uvicorn api.main:app  # → http://localhost:8000
+
 # 터미널 대시보드 (Rich CLI)
 uv run python scripts/dashboard.py --month 2024-01
 
-# 웹 대시보드 (Streamlit)
+# 웹 대시보드 (Streamlit, 내부 디버깅용)
 uv run streamlit run scripts/streamlit_app.py
 
 # 테스트 (커버리지 포함)
@@ -1343,9 +1366,29 @@ uv run mypy dagster_project
 
 - **601 tests pass** ✅
 
+### Phase 40.1 — 프로덕션 준비 + 멱등 셋업 스크립트
+
+- `scripts/setup.py` — 멱등 개발환경 셋업 스크립트 (신규)
+  - CLI: `--status`, `--tables`, `--seed`, `--materialize`, `--views`, `--all`, `--force`
+  - 7개 ASSET_GROUPS 순서대로 `dagster.materialize()` 실행 (Bronze→Silver→Gold→Analysis→Derived→Alerts→Quality)
+  - 22개 asset→테이블 매핑으로 완료 여부 자동 감지 (스킵 가능)
+  - PostgreSQL 테이블/뷰 자동 생성, platform_settings + dim_budget 시드
+  - 컬러 터미널 출력 (✓ pass / ✗ fail / → skip)
+- **i18n 완성** — 서버 컴포넌트 30개 페이지 전체 하드코딩 문자열 제거
+  - `budget/page.tsx` — 3개 문자열 번역 (empty hint, no budget set)
+  - `tag-compliance/page.tsx` — ScoreBadge i18n (High/Medium/Low → `t("misc.*")`)
+  - `showback/page.tsx` — empty state description 번역
+  - `BudgetManager.tsx`, `DataQualityClient.tsx`, `AllocationClient.tsx` — `useT()` 훅으로 클라이언트 컴포넌트 번역
+- **페이지 메타데이터** — 23개 페이지에 `export const metadata = { title: "PageName — FinOps" }` 추가
+- **레이아웃 표준화** — 6개 페이지 `maxWidth` 1000px/1100px → 1200px 통일
+- **반응형 테이블** — `globals.css`에 `.table-responsive` + `@media (max-width: 768px)` 추가
+- `overview/data.ts` — 중복 `API_BASE` 제거, `@/lib/api` import로 통일
+- `test_tag_compliance.py` — `test_tag_compliance_rank_sequence` assertion 완화 (실제 데이터 호환)
+- **631 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 40 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 40.1 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 

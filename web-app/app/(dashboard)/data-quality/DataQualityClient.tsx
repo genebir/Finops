@@ -5,6 +5,7 @@ import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState } from "@/components/primitives/States";
 import { SeverityBadge } from "@/components/status/SeverityBadge";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { DataQualityData, DqCheck } from "@/lib/types";
 import { useEffect, useState } from "react";
 
@@ -22,7 +23,7 @@ const EXPORTABLE = [
   "pipeline_run_log",
 ];
 
-function CheckStatus({ passed }: { passed: boolean }) {
+function CheckStatus({ passed, passLabel, failLabel }: { passed: boolean; passLabel: string; failLabel: string }) {
   return (
     <span
       style={{
@@ -39,7 +40,7 @@ function CheckStatus({ passed }: { passed: boolean }) {
         padding: "2px 8px",
       }}
     >
-      {passed ? "PASS" : "FAIL"}
+      {passed ? passLabel : failLabel}
     </span>
   );
 }
@@ -56,6 +57,7 @@ function humanAgo(iso: string | null): string {
 }
 
 export default function DataQualityClient() {
+  const t = useT();
   const [data, setData] = useState<DataQualityData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "failed">("all");
@@ -71,12 +73,12 @@ export default function DataQualityClient() {
       }
     }
     tick();
-    const t = setInterval(tick, REFRESH_MS);
-    return () => { alive = false; clearInterval(t); };
+    const iv = setInterval(tick, REFRESH_MS);
+    return () => { alive = false; clearInterval(iv); };
   }, []);
 
   if (error && !data) return <ErrorState message={error} />;
-  if (!data) return <div style={{ color: "var(--text-tertiary)" }}>Loading…</div>;
+  if (!data) return <div style={{ color: "var(--text-tertiary)" }}>{t("misc.loading")}</div>;
 
   const { checks, summary } = data;
   const visible = filter === "failed" ? checks.filter((c) => !c.passed) : checks;
@@ -87,25 +89,25 @@ export default function DataQualityClient() {
       {/* Summary KPIs */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 32 }}>
         <MetricCard
-          label="Total Checks"
+          label={t("label.total_checks")}
           value={String(summary.total)}
-          sub="latest run"
+          sub={t("misc.latest_run")}
         />
         <MetricCard
-          label="Passed"
+          label={t("label.passed")}
           value={String(summary.passed)}
           valueColor="var(--status-healthy)"
-          sub={`${passRate}% pass rate`}
+          sub={`${passRate}% ${t("misc.pass_rate")}`}
         />
         <MetricCard
-          label="Failed"
+          label={t("th.failed")}
           value={String(summary.failed)}
           valueColor={summary.failed > 0 ? "var(--status-critical)" : "var(--text-primary)"}
-          sub={summary.failed > 0 ? "attention required" : "all good"}
+          sub={summary.failed > 0 ? t("misc.attention_required") : t("misc.all_good")}
         />
         <MetricCard
-          label="Health"
-          value={summary.failed === 0 ? "OK" : summary.failed <= 2 ? "WARN" : "FAIL"}
+          label={t("label.health")}
+          value={summary.failed === 0 ? t("status.ok") : summary.failed <= 2 ? t("status.warning") : t("status.fail")}
           valueColor={
             summary.failed === 0
               ? "var(--status-healthy)"
@@ -113,14 +115,14 @@ export default function DataQualityClient() {
               ? "var(--status-warning)"
               : "var(--status-critical)"
           }
-          sub="overall pipeline quality"
+          sub={t("misc.pipeline_quality")}
         />
       </div>
 
       {/* Check results table */}
       <Card style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <p style={{ fontFamily: "Inter, sans-serif", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>Quality Checks</p>
+          <p style={{ fontFamily: "Inter, sans-serif", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{t("section.quality_checks")}</p>
           <div style={{ display: "flex", gap: 8 }}>
             {(["all", "failed"] as const).map((f) => (
               <button
@@ -137,27 +139,27 @@ export default function DataQualityClient() {
                   fontWeight: filter === f ? 600 : 400,
                 }}
               >
-                {f === "all" ? `All (${summary.total})` : `Failed (${summary.failed})`}
+                {f === "all" ? `${t("action.all")} (${summary.total})` : `${t("status.fail")} (${summary.failed})`}
               </button>
             ))}
           </div>
         </div>
         {visible.length === 0 ? (
           <p style={{ color: "var(--text-tertiary)", fontSize: 13 }}>
-            {filter === "failed" ? "No failed checks." : "No checks recorded yet. Run the data_quality asset in Dagster."}
+            {filter === "failed" ? t("empty.no_failed_checks") : t("empty.no_checks_yet")}
           </p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: "1px solid var(--border)" }}>
-                <th style={{ textAlign: "left", padding: "0 8px 12px 0", fontWeight: 600, color: "var(--text-tertiary)" }}>Table</th>
-                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Column</th>
-                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Check</th>
-                <th style={{ textAlign: "right", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Rows</th>
-                <th style={{ textAlign: "right", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Failed</th>
-                <th style={{ textAlign: "center", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Result</th>
-                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Checked</th>
-                <th style={{ textAlign: "left", padding: "0 0 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>Detail</th>
+                <th style={{ textAlign: "left", padding: "0 8px 12px 0", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.table")}</th>
+                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.column")}</th>
+                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.check")}</th>
+                <th style={{ textAlign: "right", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.rows")}</th>
+                <th style={{ textAlign: "right", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.failed")}</th>
+                <th style={{ textAlign: "center", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.result")}</th>
+                <th style={{ textAlign: "left", padding: "0 8px 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.checked")}</th>
+                <th style={{ textAlign: "left", padding: "0 0 12px 8px", fontWeight: 600, color: "var(--text-tertiary)" }}>{t("th.detail")}</th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +173,7 @@ export default function DataQualityClient() {
                     {c.failed_count?.toLocaleString() ?? "—"}
                   </td>
                   <td style={{ padding: "10px 8px", textAlign: "center" }}>
-                    <CheckStatus passed={c.passed} />
+                    <CheckStatus passed={c.passed} passLabel={t("status.pass")} failLabel={t("status.fail")} />
                   </td>
                   <td style={{ padding: "10px 8px", color: "var(--text-tertiary)" }}>{humanAgo(c.checked_at)}</td>
                   <td style={{ padding: "10px 0 10px 8px", color: "var(--text-tertiary)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -186,9 +188,9 @@ export default function DataQualityClient() {
 
       {/* CSV Export */}
       <Card>
-        <CardHeader>Export Tables</CardHeader>
+        <CardHeader>{t("section.export_tables")}</CardHeader>
         <p style={{ color: "var(--text-tertiary)", fontSize: 13, marginBottom: 16 }}>
-          Download any table as CSV (up to 100k rows).
+          {t("misc.download_csv")}
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {EXPORTABLE.map((table) => (

@@ -3,9 +3,12 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 import type { BurnRateData, BurnRateSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Burn Rate — FinOps" };
 
 async function fetchBurnRate(): Promise<BurnRateData> {
   const res = await fetch(`${API_BASE}/api/burn-rate`, { cache: "no-store" });
@@ -27,7 +30,7 @@ function fmt(n: number | null | undefined): string {
 
 function BurnBar({ pct }: { pct: number | null }) {
   if (pct == null) {
-    return <span style={{ color: "var(--text-tertiary)", fontSize: "12px" }}>no budget</span>;
+    return <span style={{ color: "var(--text-tertiary)", fontSize: "12px" }}>—</span>;
   }
   const color =
     pct >= 100
@@ -73,9 +76,8 @@ const EMPTY_SUMMARY: BurnRateSummary = {
   on_track_count: 0,
 };
 
-const HEADERS = ["Team", "Env", "MTD Cost", "Daily Avg", "Projected EOM", "Budget", "Progress", "Status"];
-
 export default async function BurnRatePage() {
+  const t = getT();
   let data: BurnRateData;
   try {
     data = await fetchBurnRate();
@@ -86,59 +88,65 @@ export default async function BurnRatePage() {
   const { items, billing_month } = data;
   const summary: BurnRateSummary = data.summary ?? EMPTY_SUMMARY;
 
+  const HEADERS = [
+    { key: "th.team", align: "left" },
+    { key: "th.env", align: "center" },
+    { key: "th.mtd_cost", align: "right" },
+    { key: "th.daily_avg", align: "right" },
+    { key: "th.projected_eom", align: "right" },
+    { key: "th.budget", align: "right" },
+    { key: "th.progress", align: "left" },
+    { key: "th.status", align: "center" },
+  ] as const;
+
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Burn Rate"
-        description={`${billing_month} — MTD spend velocity and projected end-of-month cost`}
+        title={t("page.burn_rate.title")}
+        description={`${billing_month} — ${t("misc.month_to_date")}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="MTD Total"
+          label={t("label.mtd_total")}
           value={fmt(summary.total_mtd)}
-          sub="month-to-date"
+          sub={t("misc.month_to_date")}
         />
         <MetricCard
-          label="Projected EOM"
+          label={t("label.projected_eom")}
           value={fmt(summary.total_projected_eom)}
-          sub="end-of-month estimate"
+          sub={t("misc.eom_estimate")}
         />
         <MetricCard
-          label="Critical"
+          label={t("label.critical")}
           value={String(summary.critical_count ?? 0)}
-          sub="over budget trajectory"
+          sub={t("misc.over_budget_trajectory")}
           valueColor={(summary.critical_count ?? 0) > 0 ? "var(--status-critical)" : undefined}
         />
         <MetricCard
-          label="Warning"
+          label={t("label.warning")}
           value={String(summary.warning_count ?? 0)}
-          sub="approaching budget"
+          sub={t("misc.approaching_budget")}
           valueColor={(summary.warning_count ?? 0) > 0 ? "var(--status-warning)" : undefined}
         />
       </div>
 
       <Card>
-        <CardHeader>Team / Environment Burn Rate</CardHeader>
+        <CardHeader>{t("section.team_env_burn_rate")}</CardHeader>
         {items.length === 0 ? (
           <EmptyState
-            title="No burn rate data"
-            description="Run the burn_rate asset in Dagster."
+            title={t("empty.no_burn_rate")}
+            description={t("empty.run_anomaly")}
           />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {HEADERS.map((h, idx, arr) => (
+                {HEADERS.map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign:
-                        h === "Status"
-                          ? "center"
-                          : idx >= 2 && idx <= 5
-                          ? "right"
-                          : "left",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -154,7 +162,7 @@ export default async function BurnRatePage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -168,7 +176,7 @@ export default async function BurnRatePage() {
                   <td style={{ padding: "10px 8px 10px 0", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
                     {r.team}
                   </td>
-                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center", fontSize: "13px", color: "var(--text-secondary)" }}>
                     {r.env}
                   </td>
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>

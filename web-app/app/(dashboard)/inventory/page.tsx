@@ -5,8 +5,11 @@ import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
 import { ProviderBadge } from "@/components/status/SeverityBadge";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Inventory — FinOps" };
 
 interface InventoryItem {
   resource_id: string;
@@ -39,8 +42,6 @@ async function fetchInventory(): Promise<InventoryData> {
   return res.json();
 }
 
-const HEADERS = ["Resource", "Service", "Provider", "Team", "Env", "30d Cost", "Tags"];
-
 const ENV_COLORS: Record<string, string> = {
   prod: "#D97757",
   staging: "#8E7BB5",
@@ -52,6 +53,7 @@ function envColor(env: string) {
 }
 
 export default async function InventoryPage() {
+  const t = getT();
   let data: InventoryData;
   try {
     data = await fetchInventory();
@@ -61,27 +63,37 @@ export default async function InventoryPage() {
 
   const { summary, items } = data;
 
+  const HEADERS = [
+    { key: "th.resource", align: "left" },
+    { key: "th.service", align: "left" },
+    { key: "th.provider", align: "center" },
+    { key: "th.team", align: "center" },
+    { key: "th.env", align: "center" },
+    { key: "th.cost_30d", align: "right" },
+    { key: "th.tags", align: "center" },
+  ] as const;
+
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Resource Inventory"
-        description={`${summary.total.toLocaleString()} resources tracked — tag completeness audit`}
+        title={t("page.inventory.title")}
+        description={`${summary.total.toLocaleString()} ${t("label.resources").toLowerCase()}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
-        <MetricCard label="Total Resources" value={summary.total.toLocaleString()} />
+        <MetricCard label={t("label.total_resources")} value={summary.total.toLocaleString()} />
         <MetricCard
-          label="Tag Complete"
+          label={t("label.tag_complete")}
           value={summary.complete.toLocaleString()}
           valueColor="var(--status-healthy)"
         />
         <MetricCard
-          label="Incomplete"
+          label={t("label.incomplete")}
           value={summary.incomplete.toLocaleString()}
           valueColor={summary.incomplete > 0 ? "var(--status-warning)" : undefined}
         />
         <MetricCard
-          label="Completeness"
+          label={t("label.completeness")}
           value={`${summary.completeness_pct.toFixed(1)}%`}
           valueColor={
             summary.completeness_pct >= 90
@@ -94,21 +106,21 @@ export default async function InventoryPage() {
       </div>
 
       <Card>
-        <CardHeader>All Resources</CardHeader>
+        <CardHeader>{t("section.all_resources")}</CardHeader>
         {items.length === 0 ? (
           <EmptyState
-            title="No inventory data"
-            description="Run the resource_inventory asset in Dagster."
+            title={t("empty.no_inventory")}
+            description={t("empty.run_anomaly")}
           />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {HEADERS.map((h, idx, arr) => (
+                {HEADERS.map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign: h === "Provider" || h === "Tags" ? "center" : idx === arr.length - 1 ? "right" : "left",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -124,7 +136,7 @@ export default async function InventoryPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -135,7 +147,6 @@ export default async function InventoryPage() {
                   key={item.resource_id}
                   style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}
                 >
-                  {/* Resource */}
                   <td style={{ padding: "10px 8px 10px 0" }}>
                     <div>
                       <Link
@@ -152,20 +163,16 @@ export default async function InventoryPage() {
                       </code>
                     </div>
                   </td>
-                  {/* Service */}
                   <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
                     {item.service_name || "—"}
                   </td>
-                  {/* Provider */}
                   <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <ProviderBadge provider={item.provider as "aws" | "gcp" | "azure"} />
                   </td>
-                  {/* Team */}
-                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center", fontSize: "13px", color: "var(--text-secondary)" }}>
                     {item.team}
                   </td>
-                  {/* Env */}
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <span
                       style={{
                         display: "inline-block",
@@ -182,7 +189,6 @@ export default async function InventoryPage() {
                       {item.env}
                     </span>
                   </td>
-                  {/* 30d Cost */}
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>
                     <span
                       className="font-mono"
@@ -192,7 +198,6 @@ export default async function InventoryPage() {
                       {Math.round(item.total_cost_30d).toLocaleString("en-US")}
                     </span>
                   </td>
-                  {/* Tags */}
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                     {item.tags_complete ? (
                       <span
@@ -209,7 +214,7 @@ export default async function InventoryPage() {
                             "color-mix(in srgb, var(--status-healthy) 15%, transparent)",
                         }}
                       >
-                        OK
+                        {t("status.ok")}
                       </span>
                     ) : (
                       <span
@@ -229,8 +234,8 @@ export default async function InventoryPage() {
                         }}
                       >
                         {item.missing_tags
-                          ? `missing: ${item.missing_tags}`
-                          : "incomplete"}
+                          ? `${t("status.missing")} ${item.missing_tags}`
+                          : t("status.incomplete")}
                       </span>
                     )}
                   </td>

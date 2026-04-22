@@ -1,9 +1,9 @@
 import type {
   AlertHistoryData, AlertHistoryItem,
-  AnomaliesData, BudgetData, BudgetEntry, BudgetEntryList, BurnRateData,
+  AnomaliesData, AssetListResponse, BudgetData, BudgetEntry, BudgetEntryList, BurnRateData,
   ChargebackData, CostHeatmapData, DataQualityData, ExplorerData, FiltersData, ForecastData,
-  OpsHealthData, OpsRunsData, OverviewData, RecommendationsData,
-  SavingsData, SettingItem, SettingsData,
+  OpsHealthData, OpsRunsData, OverviewData, PipelinePreset, RecommendationsData,
+  SavingsData, SettingItem, SettingsData, TriggerResponse,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -114,4 +114,9 @@ export const api = {
 
   costHeatmap: (p?: { billing_month?: string; provider?: string; team?: string }) =>
     get<CostHeatmapData>("/api/cost-heatmap", p),
+
+  pipelineAssets: () => getFresh<AssetListResponse>("/api/pipeline/assets"),
+  pipelinePresets: () => getFresh<PipelinePreset[]>("/api/pipeline/presets"),
+  triggerPipeline: (assets: string[], partition_key?: string) =>
+    send<TriggerResponse>("POST", "/api/pipeline/trigger", { assets, partition_key }),
 };

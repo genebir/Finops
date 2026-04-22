@@ -3,7 +3,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Cloud Compare — FinOps" };
 
 interface ProviderStat {
@@ -51,6 +53,7 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 }
 
 export default async function CloudComparePage() {
+  const t = getT();
   let data: CloudCompareData;
   try {
     data = await fetchData();
@@ -59,13 +62,13 @@ export default async function CloudComparePage() {
   }
 
   const providerList = ["aws", "gcp", "azure"];
-  const crossTabHeaders = ["Team", ...providerList.map((p) => p.toUpperCase()), "Total"];
+  const crossTabHeaders = [t("th.team"), ...providerList.map((p) => p.toUpperCase()), t("th.total")];
 
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Cloud Compare"
-        description={`${data.billing_month} — AWS · GCP · Azure side-by-side`}
+        title={t("page.cloud_compare.title")}
+        description={`${data.billing_month} — ${t("page.cloud_compare.desc")}`}
       />
 
       {/* Provider KPI cards */}
@@ -94,7 +97,7 @@ export default async function CloudComparePage() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
         {/* Top services per provider */}
         <Card>
-          <CardHeader>Top Services by Provider</CardHeader>
+          <CardHeader>{t("section.top_services_by_provider")}</CardHeader>
           {providerList.map((prov) => {
             const svcs = data.top_services_by_provider[prov] ?? [];
             const cssColor = PROVIDER_COLOR[prov] ?? "var(--text-secondary)";
@@ -122,7 +125,7 @@ export default async function CloudComparePage() {
 
         {/* Team breakdown */}
         <Card>
-          <CardHeader>Team Breakdown by Cloud</CardHeader>
+          <CardHeader>{t("section.top_team_breakdown")}</CardHeader>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -172,7 +175,7 @@ export default async function CloudComparePage() {
 
       {/* Monthly trend */}
       <Card>
-        <CardHeader>Monthly Trend</CardHeader>
+        <CardHeader>{t("section.monthly_trend_chart")}</CardHeader>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "16px" }}>
           {providerList.map((prov) => {
             const trend = data.trend_by_provider[prov] ?? [];

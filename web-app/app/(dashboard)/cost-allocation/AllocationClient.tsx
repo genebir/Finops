@@ -4,6 +4,7 @@ import { useState } from "react";
 import { PencilSimple, Check, X, Trash } from "@phosphor-icons/react";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { API_BASE } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 
 interface AllocationRule {
   id: number;
@@ -41,10 +42,26 @@ const iconBtn: React.CSSProperties = {
   alignItems: "center",
 };
 
-const RULES_HEADERS = ["Resource ID", "Team", "Split %", "Description", ""];
-const ALLOC_HEADERS = ["Team", "Resource", "Service", "Provider", "Split", "Allocated", "Original"];
-
 export default function AllocationClient({ initialRules, billingMonth, allocatedItems }: Props) {
+  const t = useT();
+
+  const rulesHeaders = [
+    { label: t("th.resource"), align: "left" },
+    { label: t("th.team"), align: "left" },
+    { label: t("th.split_pct"), align: "right" },
+    { label: t("th.description"), align: "left" },
+    { label: "", align: "right" },
+  ];
+  const allocHeaders = [
+    { label: t("th.team"), align: "left" },
+    { label: t("th.resource"), align: "left" },
+    { label: t("th.service"), align: "left" },
+    { label: t("th.provider"), align: "left" },
+    { label: t("th.split_pct"), align: "right" },
+    { label: t("th.allocated"), align: "right" },
+    { label: t("th.original"), align: "right" },
+  ];
+
   const [rules, setRules] = useState<AllocationRule[]>(initialRules);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editSplitPct, setEditSplitPct] = useState("");
@@ -147,7 +164,7 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
       <Card style={{ marginBottom: "24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <p style={{ fontFamily: "Inter, sans-serif", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>
-            Allocation Rules
+            {t("section.allocation_rules")}
           </p>
           <button
             onClick={() => setShowAdd(!showAdd)}
@@ -162,7 +179,7 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
               cursor: "pointer",
             }}
           >
-            {showAdd ? "Cancel" : "+ Add Rule"}
+            {showAdd ? t("action.cancel") : t("action.add_rule_toggle")}
           </button>
         </div>
 
@@ -213,24 +230,24 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
                 fontWeight: 600,
               }}
             >
-              {adding ? "…" : "Save"}
+              {adding ? "…" : t("action.save")}
             </button>
           </div>
         )}
 
         {rules.length === 0 ? (
           <p style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
-            No allocation rules. Add one above to split resource costs across teams.
+            {t("empty.no_allocation_rules")}
           </p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {RULES_HEADERS.map((h, idx, arr) => (
+                {rulesHeaders.map((h, idx, arr) => (
                   <th
-                    key={h || idx}
+                    key={h.label || idx}
                     style={{
-                      textAlign: "left",
+                      textAlign: h.align as "left" | "right",
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -244,10 +261,10 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
                           ? "0 0 12px 8px"
                           : "0 8px 12px 8px",
                       borderBottom: "1px solid var(--border)",
-                      width: h === "" ? "80px" : h === "Split %" ? "80px" : undefined,
+                      width: h.label === "" ? "80px" : idx === 2 ? "80px" : undefined,
                     }}
                   >
-                    {h}
+                    {h.label}
                   </th>
                 ))}
               </tr>
@@ -348,20 +365,20 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
 
       {/* Allocated costs view */}
       <Card>
-        <CardHeader>Allocated Costs — {billingMonth}</CardHeader>
+        <CardHeader>{t("section.allocated_costs")} — {billingMonth}</CardHeader>
         {allocatedItems.length === 0 ? (
           <p style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
-            No allocated costs for this period. Run the <code className="font-mono" style={{ fontSize: "11px" }}>cost_allocation</code> asset in Dagster.
+            {t("empty.no_allocated_costs")} <code className="font-mono" style={{ fontSize: "11px" }}>{t("empty.run_cost_allocation")}</code>
           </p>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {ALLOC_HEADERS.map((h, idx, arr) => (
+                {allocHeaders.map((h, idx, arr) => (
                   <th
-                    key={h}
+                    key={h.label}
                     style={{
-                      textAlign: idx >= 5 ? "right" : "left",
+                      textAlign: h.align as "left" | "right",
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -377,7 +394,7 @@ export default function AllocationClient({ initialRules, billingMonth, allocated
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {h.label}
                   </th>
                 ))}
               </tr>

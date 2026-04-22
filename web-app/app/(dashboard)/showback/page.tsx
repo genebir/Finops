@@ -3,8 +3,11 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader, SectionLabel } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Showback — FinOps" };
 
 interface TopItem {
   name: string;
@@ -72,9 +75,16 @@ function BudgetBar({ pct }: { pct: number }) {
   );
 }
 
-const TEAM_HEADERS = ["Team", "Total Cost", "Budget", "Utilization", "Anomalies"];
+const TEAM_HEADERS = [
+  { key: "th.team", align: "left" },
+  { key: "th.total_cost", align: "right" },
+  { key: "th.budget", align: "right" },
+  { key: "th.utilization", align: "right" },
+  { key: "th.anomalies", align: "center" },
+] as const;
 
 export default async function ShowbackPage() {
+  const t = getT();
   let data: ShowbackData;
   try {
     data = await fetchShowback();
@@ -83,19 +93,19 @@ export default async function ShowbackPage() {
   }
 
   const { teams, billing_month, total_cost } = data;
-  const totalAnomalies = teams.reduce((s, t) => s + (t.anomaly_count || 0), 0);
+  const totalAnomalies = teams.reduce((s, tm) => s + (tm.anomaly_count || 0), 0);
   const teamsOverBudget = teams.filter(
-    (t) => t.utilization_pct !== null && t.utilization_pct >= 100
+    (tm) => tm.utilization_pct !== null && tm.utilization_pct >= 100
   ).length;
 
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Showback"
-        description={`${billing_month} — team cost accountability report`}
+        title={t("page.showback.title")}
+        description={`${billing_month} — ${t("page.showback.desc")}`}
         action={
           <a
-            href={`http://localhost:8000/api/showback/export?billing_month=${billing_month}`}
+            href={`${API_BASE}/api/showback/export?billing_month=${billing_month}`}
             style={{
               padding: "8px 16px",
               borderRadius: "var(--radius-button)",
@@ -107,24 +117,24 @@ export default async function ShowbackPage() {
               background: "transparent",
             }}
           >
-            Export JSON
+            {t("action.export_json")}
           </a>
         }
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Total Cost"
+          label={t("label.total_cost")}
           value={`$${Math.round(total_cost).toLocaleString("en-US")}`}
         />
-        <MetricCard label="Teams" value={String(teams.length)} />
+        <MetricCard label={t("label.teams")} value={String(teams.length)} />
         <MetricCard
-          label="Over Budget"
+          label={t("label.over_budget")}
           value={String(teamsOverBudget)}
           valueColor={teamsOverBudget > 0 ? "var(--status-critical)" : undefined}
         />
         <MetricCard
-          label="Total Anomalies"
+          label={t("label.total_anomalies")}
           value={String(totalAnomalies)}
           valueColor={totalAnomalies > 0 ? "var(--status-warning)" : undefined}
         />
@@ -132,22 +142,22 @@ export default async function ShowbackPage() {
 
       {teams.length === 0 ? (
         <EmptyState
-          title="No showback data"
-          description="Run the showback_report asset in Dagster."
+          title={t("empty.no_showback")}
+          description={t("empty.run_showback")}
         />
       ) : (
         <>
           {/* Summary table */}
           <Card style={{ marginBottom: "24px" }}>
-            <CardHeader>Team Summary</CardHeader>
+            <CardHeader>{t("section.team_summary")}</CardHeader>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {TEAM_HEADERS.map((h, idx, arr) => (
+                  {TEAM_HEADERS.map((col, idx, arr) => (
                     <th
-                      key={h}
+                      key={col.key}
                       style={{
-                        textAlign: idx === 0 ? "left" : "right",
+                        textAlign: col.align,
                         fontSize: "10px",
                         fontWeight: 600,
                         fontFamily: "Inter, sans-serif",
@@ -163,47 +173,47 @@ export default async function ShowbackPage() {
                         borderBottom: "1px solid var(--border)",
                       }}
                     >
-                      {h}
+                      {t(col.key)}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {teams.map((t, i, arr) => (
+                {teams.map((tm, i, arr) => (
                   <tr
-                    key={t.team}
+                    key={tm.team}
                     style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}
                   >
                     <td style={{ padding: "10px 8px 10px 0", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
-                      {t.team}
+                      {tm.team}
                     </td>
                     <td style={{ padding: "10px 8px", textAlign: "right" }}>
                       <span className="font-mono" style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)" }}>
                         <span className="currency-symbol">$</span>
-                        {Math.round(t.total_cost).toLocaleString("en-US")}
+                        {Math.round(tm.total_cost).toLocaleString("en-US")}
                       </span>
                     </td>
                     <td style={{ padding: "10px 8px", textAlign: "right" }}>
-                      {t.budget_amount != null ? (
+                      {tm.budget_amount != null ? (
                         <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
                           <span className="currency-symbol">$</span>
-                          {Math.round(t.budget_amount).toLocaleString("en-US")}
+                          {Math.round(tm.budget_amount).toLocaleString("en-US")}
                         </span>
                       ) : (
                         <span style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>—</span>
                       )}
                     </td>
                     <td style={{ padding: "10px 8px", textAlign: "right", minWidth: "140px" }}>
-                      {t.utilization_pct != null ? (
-                        <BudgetBar pct={t.utilization_pct} />
+                      {tm.utilization_pct != null ? (
+                        <BudgetBar pct={tm.utilization_pct} />
                       ) : (
                         <span style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
-                      {t.anomaly_count > 0 ? (
+                    <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
+                      {tm.anomaly_count > 0 ? (
                         <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--status-warning)" }}>
-                          {t.anomaly_count}
+                          {tm.anomaly_count}
                         </span>
                       ) : (
                         <span style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>0</span>
@@ -217,19 +227,19 @@ export default async function ShowbackPage() {
 
           {/* Per-team detail cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "16px" }}>
-            {teams.map((t) => (
-              <Card key={t.team}>
+            {teams.map((tm) => (
+              <Card key={tm.team}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
                   <div>
                     <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "2px" }}>
-                      {t.team}
+                      {tm.team}
                     </div>
                     <span className="font-mono" style={{ fontSize: "20px", fontWeight: 500, color: "var(--text-primary)" }}>
                       <span className="currency-symbol">$</span>
-                      {Math.round(t.total_cost).toLocaleString("en-US")}
+                      {Math.round(tm.total_cost).toLocaleString("en-US")}
                     </span>
                   </div>
-                  {t.anomaly_count > 0 && (
+                  {tm.anomaly_count > 0 && (
                     <span style={{
                       padding: "2px 8px",
                       borderRadius: "var(--radius-full)",
@@ -239,15 +249,15 @@ export default async function ShowbackPage() {
                       color: "var(--status-warning)",
                       background: "color-mix(in srgb, var(--status-warning) 15%, transparent)",
                     }}>
-                      {t.anomaly_count} anomaly
+                      {tm.anomaly_count} anomaly
                     </span>
                   )}
                 </div>
 
-                {t.top_services.length > 0 && (
+                {tm.top_services.length > 0 && (
                   <div style={{ marginBottom: "12px" }}>
-                    <SectionLabel>Top Services</SectionLabel>
-                    {t.top_services.slice(0, 3).map((svc) => (
+                    <SectionLabel>{t("section.top_services")}</SectionLabel>
+                    {tm.top_services.slice(0, 3).map((svc) => (
                       <div key={svc.name} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px" }}>
                         <span style={{ color: "var(--text-secondary)" }}>{svc.name}</span>
                         <span className="font-mono" style={{ color: "var(--text-primary)" }}>
@@ -258,10 +268,10 @@ export default async function ShowbackPage() {
                   </div>
                 )}
 
-                {t.top_resources.length > 0 && (
+                {tm.top_resources.length > 0 && (
                   <div>
-                    <SectionLabel>Top Resources</SectionLabel>
-                    {t.top_resources.slice(0, 3).map((res) => (
+                    <SectionLabel>{t("section.top_resources")}</SectionLabel>
+                    {tm.top_resources.slice(0, 3).map((res) => (
                       <div key={res.name} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px" }}>
                         <code className="font-mono" style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
                           {res.name}

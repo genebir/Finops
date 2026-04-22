@@ -111,7 +111,7 @@ export default async function ResourceDetailPage({
   const envColor = (env: string) => ENV_COLORS[env] ?? "#9B9590";
 
   return (
-    <div style={{ maxWidth: "1100px" }}>
+    <div style={{ maxWidth: "1200px" }}>
       {/* Back link */}
       <Link
         href="/inventory"

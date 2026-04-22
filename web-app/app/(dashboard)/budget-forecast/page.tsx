@@ -3,7 +3,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Budget Forecast — FinOps" };
 
 interface ForecastItem {
@@ -58,6 +60,7 @@ function ProjectionBar({ mtd, projected, budget, daysElapsed, daysInMonth }: {
 }
 
 export default async function BudgetForecastPage() {
+  const t = getT();
   let data: ForecastData;
   try {
     data = await fetchForecast();
@@ -66,48 +69,57 @@ export default async function BudgetForecastPage() {
   }
 
   const { summary, items, billing_month } = data;
-  const headers = ["Team", "Env", "Progress", "MTD", "Projected", "Budget", "Proj %", "Risk"];
+  const HEADERS = [
+    { key: "th.team", align: "left" },
+    { key: "th.env", align: "center" },
+    { key: "th.progress", align: "left" },
+    { key: "th.mtd", align: "right" },
+    { key: "th.projected", align: "right" },
+    { key: "th.budget", align: "right" },
+    { key: "th.proj_pct", align: "center" },
+    { key: "th.risk", align: "center" },
+  ] as const;
 
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Budget Forecast"
-        description={`${billing_month} — linear EOM projection from MTD spend`}
+        title={t("page.budget_forecast.title")}
+        description={`${billing_month} — ${t("page.budget_forecast.desc")}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Projected EOM"
+          label={t("label.projected_eom")}
           value={`$${summary.total_projected_eom.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
         />
         <MetricCard
-          label="Over Budget"
+          label={t("label.over_budget")}
           value={String(summary.over_budget_count)}
           valueColor="var(--status-critical)"
         />
         <MetricCard
-          label="Warning"
+          label={t("label.warning_count")}
           value={String(summary.warning_count)}
           valueColor="var(--status-warning)"
         />
         <MetricCard
-          label="On Track"
+          label={t("label.on_track_count")}
           value={String(summary.normal_count)}
           valueColor="var(--status-healthy)"
         />
       </div>
 
       <Card>
-        <CardHeader>Forecast by Team / Environment</CardHeader>
+        <CardHeader>{t("section.forecast_by_team")}</CardHeader>
         {items.length === 0 ? (
-          <EmptyState title="No forecast data" description="Materialize the budget_forecast Dagster asset first." />
+          <EmptyState title={t("empty.no_forecast")} description="Materialize the budget_forecast Dagster asset first." />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {headers.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: "left",
+                {HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -117,7 +129,7 @@ export default async function BudgetForecastPage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -130,7 +142,7 @@ export default async function BudgetForecastPage() {
                     <td style={{ padding: "10px 0" }}>
                       <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>{item.team}</span>
                     </td>
-                    <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>{item.env}</td>
+                    <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)", textAlign: "center" }}>{item.env}</td>
                     <td style={{ padding: "10px 8px", minWidth: "140px" }}>
                       <ProjectionBar
                         mtd={item.mtd_cost} projected={item.projected_eom}
@@ -141,12 +153,12 @@ export default async function BudgetForecastPage() {
                         Day {item.days_elapsed}/{item.days_in_month}
                       </div>
                     </td>
-                    <td style={{ padding: "10px 8px" }}>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>
                       <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
                         ${item.mtd_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 8px" }}>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>
                       <div className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
                         ${item.projected_eom.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                       </div>
@@ -154,17 +166,17 @@ export default async function BudgetForecastPage() {
                         [{item.lower_bound.toLocaleString("en-US", { maximumFractionDigits: 0 })}–{item.upper_bound.toLocaleString("en-US", { maximumFractionDigits: 0 })}]
                       </div>
                     </td>
-                    <td style={{ padding: "10px 8px" }}>
+                    <td style={{ padding: "10px 8px", textAlign: "right" }}>
                       <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-secondary)" }}>
                         {item.budget_amount != null ? `$${item.budget_amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 8px" }}>
+                    <td style={{ padding: "10px 8px", textAlign: "center" }}>
                       <span className="font-mono" style={{ fontSize: "13px", color }}>
                         {item.projected_pct != null ? `${item.projected_pct.toFixed(1)}%` : "—"}
                       </span>
                     </td>
-                    <td style={{ padding: "10px 0 10px 8px" }}>
+                    <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                       <span style={{
                         display: "inline-block", padding: "2px 8px", borderRadius: "6px",
                         fontSize: "11px", fontWeight: 600, textTransform: "uppercase",

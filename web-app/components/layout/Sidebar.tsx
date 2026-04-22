@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
+import { useT } from "@/lib/i18n";
+import type { TranslationKey } from "@/lib/i18n";
+import LanguageToggle from "./LanguageToggle";
 import {
   ChartLine,
   CurrencyDollar,
@@ -31,74 +34,77 @@ import {
   ClipboardText,
   Prohibit,
   Rows,
+  Play,
 } from "@phosphor-icons/react";
 
-type NavItem = { href: string; label: string; Icon: React.ElementType };
-type NavGroup = { id: string; label: string; Icon: React.ElementType; items: NavItem[] };
+type NavItem = { href: string; labelKey: TranslationKey; Icon: React.ElementType };
+type NavGroup = { id: string; labelKey: TranslationKey; Icon: React.ElementType; items: NavItem[] };
 
 const GROUPS: NavGroup[] = [
   {
     id: "costs",
-    label: "Costs",
+    labelKey: "nav.costs",
     Icon: CurrencyDollar,
     items: [
-      { href: "/cost-explorer",  label: "Cost Explorer",  Icon: CurrencyDollar },
-      { href: "/cloud-compare",  label: "Cloud Compare",  Icon: ArrowsLeftRight },
-      { href: "/services",       label: "Services",       Icon: GridFour },
-      { href: "/leaderboard",    label: "Leaderboard",    Icon: Trophy },
-      { href: "/env-breakdown",  label: "Env Breakdown",  Icon: ChartPieSlice },
-      { href: "/cost-trend",    label: "Cost Trend",    Icon: TrendUp },
+      { href: "/cost-explorer",  labelKey: "nav.cost_explorer",  Icon: CurrencyDollar },
+      { href: "/cloud-compare",  labelKey: "nav.cloud_compare",  Icon: ArrowsLeftRight },
+      { href: "/services",       labelKey: "nav.services",       Icon: GridFour },
+      { href: "/leaderboard",    labelKey: "nav.leaderboard",    Icon: Trophy },
+      { href: "/env-breakdown",  labelKey: "nav.env_breakdown",  Icon: ChartPieSlice },
+      { href: "/cost-trend",     labelKey: "nav.cost_trend",     Icon: TrendUp },
     ],
   },
   {
     id: "anomalies",
-    label: "Anomalies",
+    labelKey: "nav.anomalies",
     Icon: Warning,
     items: [
-      { href: "/anomalies",        label: "Anomalies",        Icon: Warning },
-      { href: "/anomaly-timeline", label: "Timeline",         Icon: Pulse },
-      { href: "/risk",             label: "Risk",             Icon: ShieldWarning },
+      { href: "/anomalies",        labelKey: "nav.anomalies",  Icon: Warning },
+      { href: "/anomaly-timeline", labelKey: "nav.timeline",   Icon: Pulse },
+      { href: "/risk",             labelKey: "nav.risk",       Icon: ShieldWarning },
     ],
   },
   {
     id: "budget",
-    label: "Budget",
+    labelKey: "nav.budget",
     Icon: Wallet,
     items: [
-      { href: "/budget",          label: "Budget",       Icon: Wallet },
-      { href: "/budget-forecast", label: "Forecast",     Icon: CalendarCheck },
-      { href: "/burn-rate",       label: "Burn Rate",    Icon: Fire },
-      { href: "/savings",         label: "Savings",      Icon: PiggyBank },
-      { href: "/chargeback",      label: "Chargeback",   Icon: Receipt },
-      { href: "/showback",          label: "Showback",       Icon: ClipboardText },
-      { href: "/cost-allocation",   label: "Allocation",     Icon: Rows },
-      { href: "/recommendations", label: "Suggestions",  Icon: Lightbulb },
+      { href: "/budget",          labelKey: "nav.budget",       Icon: Wallet },
+      { href: "/budget-forecast", labelKey: "nav.budget_forecast", Icon: CalendarCheck },
+      { href: "/burn-rate",       labelKey: "nav.burn_rate",    Icon: Fire },
+      { href: "/savings",         labelKey: "nav.savings",      Icon: PiggyBank },
+      { href: "/chargeback",      labelKey: "nav.chargeback",   Icon: Receipt },
+      { href: "/showback",        labelKey: "nav.showback",     Icon: ClipboardText },
+      { href: "/cost-allocation", labelKey: "nav.allocation",   Icon: Rows },
+      { href: "/recommendations", labelKey: "nav.suggestions",  Icon: Lightbulb },
     ],
   },
   {
     id: "compliance",
-    label: "Compliance",
+    labelKey: "nav.compliance",
     Icon: Tag,
     items: [
-      { href: "/tag-compliance", label: "Tag Compliance", Icon: Tag },
-      { href: "/tag-policy",     label: "Tag Policy",     Icon: Prohibit },
-      { href: "/inventory",      label: "Inventory",      Icon: Package },
-      { href: "/data-quality",   label: "Data Quality",   Icon: Database },
+      { href: "/tag-compliance", labelKey: "nav.tag_compliance", Icon: Tag },
+      { href: "/tag-policy",     labelKey: "nav.tag_policy",     Icon: Prohibit },
+      { href: "/inventory",      labelKey: "nav.inventory",      Icon: Package },
+      { href: "/data-quality",   labelKey: "nav.data_quality",   Icon: Database },
     ],
   },
   {
     id: "operations",
-    label: "Operations",
+    labelKey: "nav.operations",
     Icon: Gauge,
     items: [
-      { href: "/forecast", label: "Forecast", Icon: TrendUp },
-      { href: "/alerts",   label: "Alerts",   Icon: Bell },
-      { href: "/ops",      label: "Ops",      Icon: Gauge },
+      { href: "/pipeline",  labelKey: "nav.pipeline",  Icon: Play },
+      { href: "/forecast",  labelKey: "nav.forecast",  Icon: TrendUp },
+      { href: "/alerts",    labelKey: "nav.alerts",    Icon: Bell },
+      { href: "/ops",       labelKey: "nav.ops",       Icon: Gauge },
     ],
   },
 ];
 
-function SubItem({ href, label, Icon, active }: NavItem & { active: boolean }) {
+function SubItem({ href, labelKey, Icon, active }: NavItem & { active: boolean }) {
+  const t = useT();
   return (
     <Link
       href={href}
@@ -120,7 +126,7 @@ function SubItem({ href, label, Icon, active }: NavItem & { active: boolean }) {
       }}
     >
       <Icon size={15} weight={active ? "duotone" : "regular"} />
-      {label}
+      {t(labelKey)}
     </Link>
   );
 }
@@ -136,6 +142,7 @@ function GroupSection({
   onToggle: () => void;
   pathname: string;
 }) {
+  const t = useT();
   const { Icon } = group;
   const isAnyChildActive = group.items.some(
     (item) => pathname === item.href || pathname.startsWith(item.href + "/")
@@ -164,7 +171,7 @@ function GroupSection({
         }}
       >
         <Icon size={16} weight={isAnyChildActive ? "duotone" : "regular"} />
-        <span style={{ flex: 1 }}>{group.label}</span>
+        <span style={{ flex: 1 }}>{t(group.labelKey)}</span>
         {isOpen
           ? <CaretDown size={12} weight="bold" style={{ opacity: 0.5 }} />
           : <CaretRight size={12} weight="bold" style={{ opacity: 0.4 }} />
@@ -183,7 +190,8 @@ function GroupSection({
   );
 }
 
-function PinnedItem({ href, label, Icon, active }: NavItem & { active: boolean }) {
+function PinnedItem({ href, labelKey, Icon, active }: NavItem & { active: boolean }) {
+  const t = useT();
   return (
     <Link
       href={href}
@@ -205,7 +213,7 @@ function PinnedItem({ href, label, Icon, active }: NavItem & { active: boolean }
       }}
     >
       <Icon size={18} weight={active ? "duotone" : "regular"} />
-      {label}
+      {t(labelKey)}
     </Link>
   );
 }
@@ -213,14 +221,12 @@ function PinnedItem({ href, label, Icon, active }: NavItem & { active: boolean }
 export default function Sidebar() {
   const pathname = usePathname();
 
-  // Determine which groups contain the active page
   const activeGroupIds = GROUPS
     .filter((g) => g.items.some((item) => pathname === item.href || pathname.startsWith(item.href + "/")))
     .map((g) => g.id);
 
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(activeGroupIds));
 
-  // Auto-expand group containing the current page when pathname changes
   useEffect(() => {
     setOpenGroups((prev) => {
       const next = new Set(prev);
@@ -260,11 +266,14 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--border)" }}>
-        <Link href="/overview" style={{ textDecoration: "none" }}>
-          <span className="font-display" style={{ fontSize: "20px", color: "var(--text-primary)" }}>
-            FinOps
-          </span>
-        </Link>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Link href="/overview" style={{ textDecoration: "none" }}>
+            <span className="font-display" style={{ fontSize: "20px", color: "var(--text-primary)" }}>
+              FinOps
+            </span>
+          </Link>
+          <LanguageToggle />
+        </div>
         <p style={{ fontSize: "11px", color: "var(--text-tertiary)", marginTop: "2px" }}>
           Cost Intelligence
         </p>
@@ -281,12 +290,10 @@ export default function Sidebar() {
           overflowY: "auto",
         }}
       >
-        {/* Pinned: Overview */}
-        <PinnedItem href="/overview" label="Overview" Icon={ChartLine} active={isOverviewActive} />
+        <PinnedItem href="/overview" labelKey="nav.overview" Icon={ChartLine} active={isOverviewActive} />
 
         <div style={{ height: "4px" }} />
 
-        {/* Collapsible groups */}
         {GROUPS.map((group) => (
           <GroupSection
             key={group.id}
@@ -302,7 +309,7 @@ export default function Sidebar() {
       <div style={{ padding: "8px 8px 16px", borderTop: "1px solid var(--border)" }}>
         <PinnedItem
           href="/settings"
-          label="Settings"
+          labelKey="nav.settings"
           Icon={GearSix}
           active={pathname === "/settings" || pathname.startsWith("/settings/")}
         />

@@ -3,6 +3,11 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Env Breakdown — FinOps" };
 
 interface EnvRow {
   env: string;
@@ -54,9 +59,16 @@ function envColor(env: string) {
   return ENV_COLORS[env] ?? "#9B9590";
 }
 
-const envTableHeaders = ["Environment", "Cost", "Resources", "Teams", "Share"];
+const ENV_TABLE_HEADERS = [
+  { key: "th.environment", align: "left" },
+  { key: "th.cost", align: "right" },
+  { key: "th.resources", align: "center" },
+  { key: "th.teams", align: "center" },
+  { key: "th.share", align: "left" },
+] as const;
 
 export default async function EnvBreakdownPage() {
+  const t = getT();
   let data: EnvBreakdownData;
   try {
     data = await fetchEnvBreakdown();
@@ -75,31 +87,31 @@ export default async function EnvBreakdownPage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Env Breakdown"
-        description={`${data.billing_month} — environment × team cost matrix`}
+        title={t("page.env_breakdown.title")}
+        description={`${data.billing_month} — ${t("page.env_breakdown.desc")}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Total Cost"
+          label={t("label.total_cost")}
           value={`$${data.grand_total.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
         />
-        <MetricCard label="Environments" value={String(data.envs.length)} />
+        <MetricCard label={t("label.environments")} value={String(data.envs.length)} />
         <MetricCard
-          label="Total Resources"
+          label={t("label.total_resources")}
           value={data.envs.reduce((s, e) => s + e.resource_count, 0).toLocaleString()}
         />
-        <MetricCard label="Teams Represented" value={String(allTeams.length)} />
+        <MetricCard label={t("label.teams_represented")} value={String(allTeams.length)} />
       </div>
 
       <Card style={{ marginBottom: "24px" }}>
-        <CardHeader>Cost by Environment</CardHeader>
+        <CardHeader>{t("section.cost_by_env")}</CardHeader>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {envTableHeaders.map((h, idx, arr) => (
-                <th key={h} style={{
-                  textAlign: "left",
+              {ENV_TABLE_HEADERS.map((col, idx, arr) => (
+                <th key={col.key} style={{
+                  textAlign: col.align,
                   fontSize: "10px",
                   fontWeight: 600,
                   fontFamily: "Inter, sans-serif",
@@ -109,7 +121,7 @@ export default async function EnvBreakdownPage() {
                   padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                   borderBottom: "1px solid var(--border)",
                 }}>
-                  {h}
+                  {t(col.key)}
                 </th>
               ))}
             </tr>
@@ -127,15 +139,15 @@ export default async function EnvBreakdownPage() {
                     {env.env}
                   </span>
                 </td>
-                <td style={{ padding: "10px 8px" }}>
+                <td style={{ padding: "10px 8px", textAlign: "right" }}>
                   <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
                     ${env.cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                   </span>
                 </td>
-                <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)", textAlign: "center" }}>
                   {env.resource_count.toLocaleString()}
                 </td>
-                <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)", textAlign: "center" }}>
                   {env.team_count}
                 </td>
                 <td style={{ padding: "10px 0 10px 8px", minWidth: "160px" }}>
@@ -148,7 +160,7 @@ export default async function EnvBreakdownPage() {
       </Card>
 
       <Card style={{ overflowX: "auto" }}>
-        <CardHeader>Cost Matrix — Environment × Team</CardHeader>
+        <CardHeader>{t("section.cost_matrix")}</CardHeader>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "600px" }}>
           <thead>
             <tr>

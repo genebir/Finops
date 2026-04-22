@@ -3,8 +3,11 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Cost Trend — FinOps" };
 
 interface TrendPoint {
   billing_month: string;
@@ -131,11 +134,25 @@ function TrendBar({ cost, maxCost, month }: { cost: number; maxCost: number; mon
   );
 }
 
-const COMPARE_HEADERS = ["Team", "Env", "Provider", "Period 1", "Period 2", "Change", "Δ%"];
+const COMPARE_HEADERS = [
+  { key: "th.team", align: "left" },
+  { key: "th.env", align: "center" },
+  { key: "th.provider", align: "center" },
+  { key: "th.period1", align: "right" },
+  { key: "th.period2", align: "right" },
+  { key: "th.change", align: "right" },
+  { key: "th.delta_pct", align: "center" },
+] as const;
 
-const SERIES_HEADERS = ["Month", "Total Cost", "Resources", "Anomalies"];
+const SERIES_HEADERS = [
+  { key: "th.month", align: "left" },
+  { key: "th.total_cost", align: "right" },
+  { key: "th.resources", align: "center" },
+  { key: "th.anomalies", align: "center" },
+] as const;
 
 export default async function CostTrendPage() {
+  const t = getT();
   let trend: TrendData;
   try {
     trend = await fetchTrend();
@@ -157,21 +174,21 @@ export default async function CostTrendPage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Cost Trend"
-        description={`${series.length}-month cost time series and period-over-period comparison`}
+        title={t("page.cost_trend.title")}
+        description={`${series.length}-month ${t("page.cost_trend.desc")}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Latest Month"
+          label={t("label.latest_month")}
           value={summary.latest_month ?? "—"}
         />
         <MetricCard
-          label="Latest Cost"
+          label={t("label.latest_cost")}
           value={`$${Math.round(summary.latest_cost).toLocaleString("en-US")}`}
         />
         <MetricCard
-          label="MoM Change"
+          label={t("label.mom_change")}
           value={summary.mom_change_pct != null ? `${summary.mom_change_pct > 0 ? "+" : ""}${summary.mom_change_pct.toFixed(1)}%` : "—"}
           valueColor={
             summary.mom_change_pct == null
@@ -184,18 +201,18 @@ export default async function CostTrendPage() {
           }
         />
         <MetricCard
-          label="Avg Monthly"
+          label={t("label.avg_monthly")}
           value={`$${Math.round(summary.avg_monthly_cost).toLocaleString("en-US")}`}
         />
       </div>
 
       {/* Trend bars */}
       <Card style={{ marginBottom: "24px" }}>
-        <CardHeader>Monthly Cost Trend</CardHeader>
+        <CardHeader>{t("section.monthly_trend")}</CardHeader>
         {series.length === 0 ? (
           <EmptyState
-            title="No trend data"
-            description="Run the cost_trend asset in Dagster."
+            title={t("empty.no_trend")}
+            description={t("misc.run_asset_hint")}
           />
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -213,16 +230,16 @@ export default async function CostTrendPage() {
 
       {/* Time series table */}
       <Card style={{ marginBottom: "24px" }}>
-        <CardHeader>Monthly Detail</CardHeader>
+        <CardHeader>{t("section.monthly_detail")}</CardHeader>
         {series.length === 0 ? null : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {SERIES_HEADERS.map((h, idx, arr) => (
+                {SERIES_HEADERS.map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign: idx === 0 ? "left" : "right",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -238,7 +255,7 @@ export default async function CostTrendPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -258,10 +275,10 @@ export default async function CostTrendPage() {
                       {Math.round(s.total_cost).toLocaleString("en-US")}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 8px", textAlign: "right", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center", fontSize: "13px", color: "var(--text-secondary)" }}>
                     {Number(s.resource_count).toLocaleString()}
                   </td>
-                  <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                     {Number(s.anomaly_count) > 0 ? (
                       <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--status-warning)" }}>
                         {Number(s.anomaly_count).toLocaleString()}
@@ -281,7 +298,7 @@ export default async function CostTrendPage() {
       {compare && compare.items.length > 0 && (
         <Card>
           <CardHeader>
-            Period Comparison — {compare.period1} vs {compare.period2}
+            {t("section.period_comparison")} — {compare.period1} {t("misc.vs")} {compare.period2}
           </CardHeader>
           {/* Summary row */}
           <div style={{ display: "flex", gap: "24px", marginBottom: "20px", padding: "12px 16px", borderRadius: "var(--radius-button)", backgroundColor: "color-mix(in srgb, var(--border) 40%, transparent)" }}>
@@ -314,11 +331,11 @@ export default async function CostTrendPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {COMPARE_HEADERS.map((h, idx, arr) => (
+                {COMPARE_HEADERS.map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign: idx < 3 ? "left" : "right",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -334,7 +351,7 @@ export default async function CostTrendPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -348,10 +365,10 @@ export default async function CostTrendPage() {
                   <td style={{ padding: "10px 8px 10px 0", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
                     {item.team}
                   </td>
-                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)", textAlign: "center" }}>
                     {item.env}
                   </td>
-                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)", textAlign: "center" }}>
                     {item.provider}
                   </td>
                   <td style={{ padding: "10px 8px", textAlign: "right" }}>
@@ -375,7 +392,7 @@ export default async function CostTrendPage() {
                       {item.change > 0 ? "+" : ""}${Math.round(item.change).toLocaleString("en-US")}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
+                  <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                     <MoMBadge pct={item.change_pct} />
                   </td>
                 </tr>

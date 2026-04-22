@@ -4,8 +4,11 @@ import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
 import { SeverityBadge, ProviderBadge } from "@/components/status/SeverityBadge";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Tag Policy — FinOps" };
 
 interface Violation {
   id: number;
@@ -39,8 +42,6 @@ async function fetchTagPolicy(): Promise<TagPolicyData> {
   return res.json();
 }
 
-const HEADERS = ["Resource", "Provider", "Team", "Env", "Missing Tag", "Severity", "30d Cost"];
-
 const ENV_COLORS: Record<string, string> = {
   prod: "#D97757",
   staging: "#8E7BB5",
@@ -52,6 +53,7 @@ function envColor(env: string) {
 }
 
 export default async function TagPolicyPage() {
+  const t = getT();
   let data: TagPolicyData;
   try {
     data = await fetchTagPolicy();
@@ -62,57 +64,62 @@ export default async function TagPolicyPage() {
   const { violations, summary } = data;
   const totalCostAtRisk = violations.reduce((s, v) => s + (v.cost_30d ?? 0), 0);
 
+  const HEADERS = [
+    { key: "th.resource", align: "left" },
+    { key: "th.provider", align: "center" },
+    { key: "th.team", align: "center" },
+    { key: "th.env", align: "center" },
+    { key: "th.missing_tag", align: "center" },
+    { key: "th.severity", align: "center" },
+    { key: "th.cost_30d", align: "right" },
+  ] as const;
+
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Tag Policy"
-        description="Tag compliance violations — resources missing required tags"
+        title={t("page.tag_policy.title")}
+        description={t("page.tag_policy.desc")}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Total Violations"
+          label={t("label.total_violations")}
           value={String(summary.total)}
           valueColor={summary.total > 0 ? "var(--status-warning)" : undefined}
         />
         <MetricCard
-          label="Critical"
+          label={t("label.critical")}
           value={String(summary.critical)}
           valueColor={summary.critical > 0 ? "var(--status-critical)" : undefined}
         />
         <MetricCard
-          label="Warning"
+          label={t("label.warning")}
           value={String(summary.warning)}
           valueColor={summary.warning > 0 ? "var(--status-warning)" : undefined}
         />
         <MetricCard
-          label="Cost at Risk (30d)"
+          label={t("label.cost_at_risk")}
           value={`$${Math.round(totalCostAtRisk).toLocaleString("en-US")}`}
           valueColor={totalCostAtRisk > 1000 ? "var(--status-warning)" : undefined}
         />
       </div>
 
       <Card>
-        <CardHeader>Violations</CardHeader>
+        <CardHeader>{t("section.violations")}</CardHeader>
         {violations.length === 0 ? (
           <EmptyState
-            title="No violations today"
-            description="Run the tag_policy asset in Dagster to scan for violations."
+            title={t("empty.no_violations")}
+            description={t("empty.run_anomaly")}
           />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {HEADERS.map((h, idx, arr) => (
+                {HEADERS.map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign:
-                        h === "Provider" || h === "Severity"
-                          ? "center"
-                          : idx === arr.length - 1
-                          ? "right"
-                          : "left",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -128,7 +135,7 @@ export default async function TagPolicyPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -139,7 +146,6 @@ export default async function TagPolicyPage() {
                   key={v.id}
                   style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}
                 >
-                  {/* Resource */}
                   <td style={{ padding: "10px 8px 10px 0" }}>
                     <div>
                       <code
@@ -157,16 +163,13 @@ export default async function TagPolicyPage() {
                       )}
                     </div>
                   </td>
-                  {/* Provider */}
                   <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <ProviderBadge provider={v.provider as "aws" | "gcp" | "azure"} />
                   </td>
-                  {/* Team */}
-                  <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center", fontSize: "13px", color: "var(--text-secondary)" }}>
                     {v.team}
                   </td>
-                  {/* Env */}
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <span
                       style={{
                         display: "inline-block",
@@ -183,8 +186,7 @@ export default async function TagPolicyPage() {
                       {v.env}
                     </span>
                   </td>
-                  {/* Missing Tag */}
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <code
                       className="font-mono"
                       style={{
@@ -198,11 +200,9 @@ export default async function TagPolicyPage() {
                       {v.missing_tag}
                     </code>
                   </td>
-                  {/* Severity */}
                   <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <SeverityBadge severity={v.severity as "critical" | "warning"} />
                   </td>
-                  {/* Cost */}
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
                     {v.cost_30d != null ? (
                       <span

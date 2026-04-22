@@ -1,50 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../../../lib/api";
-import type { AlertHistoryData, AlertHistoryItem } from "../../../lib/types";
-
-const SEV_COLOR: Record<string, string> = {
-  critical: "#D97757",
-  warning:  "#E6A817",
-  info:     "#6B6560",
-};
-
-function SeverityBadge({ severity }: { severity: string }) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: "6px",
-        fontSize: "11px",
-        fontWeight: 600,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
-        backgroundColor: `${SEV_COLOR[severity] ?? "#6B6560"}22`,
-        color: SEV_COLOR[severity] ?? "#6B6560",
-      }}
-    >
-      {severity}
-    </span>
-  );
-}
+import { Card, CardHeader } from "@/components/primitives/Card";
+import { MetricCard } from "@/components/primitives/MetricCard";
+import { SeverityBadge } from "@/components/status/SeverityBadge";
+import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
+import type { AlertHistoryData, AlertHistoryItem } from "@/lib/types";
 
 function AckBadge({ acknowledged }: { acknowledged: boolean }) {
   return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: "6px",
-        fontSize: "11px",
-        fontWeight: 600,
-        backgroundColor: acknowledged ? "#22543D22" : "#D9777722",
-        color: acknowledged ? "#38A169" : "#D97757",
-      }}
-    >
-      {acknowledged ? "ACK" : "OPEN"}
-    </span>
+    <SeverityBadge severity={acknowledged ? "success" : "critical"} />
   );
 }
 
@@ -52,6 +18,7 @@ const FILTERS = ["all", "critical", "warning", "info"] as const;
 type SevFilter = typeof FILTERS[number];
 
 export default function AlertsClient() {
+  const t = useT();
   const [data, setData] = useState<AlertHistoryData | null>(null);
   const [sevFilter, setSevFilter] = useState<SevFilter>("all");
   const [showUnack, setShowUnack] = useState(false);
@@ -90,39 +57,27 @@ export default function AlertsClient() {
 
   return (
     <div>
-      <div style={{ marginBottom: "24px" }}>
-        <h1 style={{ fontSize: "22px", fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
-          Alert History
-        </h1>
-        <p style={{ color: "var(--text-muted)", fontSize: "13px", marginTop: "4px" }}>
-          Dispatched alerts with acknowledge workflow
-        </p>
-      </div>
-
-      {/* KPI row */}
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px", marginBottom: "24px" }}>
-          {[
-            { label: "Critical", val: summary.critical, color: "#D97757" },
-            { label: "Warning",  val: summary.warning,  color: "#E6A817" },
-            { label: "Info",     val: summary.info,     color: "#6B6560" },
-            { label: "Open",     val: summary.unacknowledged, color: "#D97757" },
-          ].map(({ label, val, color }) => (
-            <div
-              key={label}
-              style={{
-                background: "var(--bg-card)",
-                border: "1px solid var(--border)",
-                borderRadius: "12px",
-                padding: "16px 20px",
-              }}
-            >
-              <div style={{ fontSize: "11px", color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                {label}
-              </div>
-              <div style={{ fontSize: "28px", fontWeight: 700, color, marginTop: "4px" }}>{val}</div>
-            </div>
-          ))}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
+          <MetricCard
+            label={t("label.critical")}
+            value={String(summary.critical)}
+            valueColor="var(--status-critical)"
+          />
+          <MetricCard
+            label={t("label.warning")}
+            value={String(summary.warning)}
+            valueColor="var(--status-warning)"
+          />
+          <MetricCard
+            label={t("label.info")}
+            value={String(summary.info)}
+          />
+          <MetricCard
+            label={t("label.open")}
+            value={String(summary.unacknowledged)}
+            valueColor={summary.unacknowledged > 0 ? "var(--status-critical)" : "var(--text-primary)"}
+          />
         </div>
       )}
 
@@ -134,70 +89,71 @@ export default function AlertsClient() {
             onClick={() => setSevFilter(f)}
             style={{
               padding: "6px 14px",
-              borderRadius: "8px",
+              borderRadius: "var(--radius-button)",
               border: "1px solid var(--border)",
-              background: sevFilter === f ? "var(--accent)" : "var(--bg-card)",
-              color: sevFilter === f ? "#fff" : "var(--text-muted)",
+              background: sevFilter === f ? "var(--accent)" : "var(--bg-warm-subtle)",
+              color: sevFilter === f ? "#fff" : "var(--text-secondary)",
               fontSize: "12px",
               fontWeight: 600,
+              fontFamily: "Inter, sans-serif",
               cursor: "pointer",
               textTransform: "capitalize",
             }}
           >
-            {f}
+            {f === "all" ? t("action.all") : t(`label.${f}` as "label.critical" | "label.warning" | "label.info")}
           </button>
         ))}
         <button
           onClick={() => setShowUnack((v) => !v)}
           style={{
             padding: "6px 14px",
-            borderRadius: "8px",
+            borderRadius: "var(--radius-button)",
             border: "1px solid var(--border)",
-            background: showUnack ? "#D9777722" : "var(--bg-card)",
-            color: showUnack ? "#D97757" : "var(--text-muted)",
+            background: showUnack ? "rgba(217,119,87,0.1)" : "var(--bg-warm-subtle)",
+            color: showUnack ? "var(--status-critical)" : "var(--text-secondary)",
             fontSize: "12px",
             fontWeight: 600,
+            fontFamily: "Inter, sans-serif",
             cursor: "pointer",
             marginLeft: "8px",
           }}
         >
-          Open only
+          {t("action.open_only")}
         </button>
-        <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--text-muted)" }}>
-          {data ? `${data.total} alerts` : "loading…"}
+        <span style={{ marginLeft: "auto", fontSize: "12px", color: "var(--text-tertiary)" }}>
+          {data ? `${data.total} ${t("misc.alerts_count")}` : t("misc.loading")}
         </span>
       </div>
 
       {error && (
-        <div style={{ color: "#D97757", marginBottom: "12px", fontSize: "13px" }}>{error}</div>
+        <div style={{ color: "var(--status-critical)", marginBottom: "12px", fontSize: "13px" }}>{error}</div>
       )}
 
-      {/* Table */}
-      <div
-        style={{
-          background: "var(--bg-card)",
-          border: "1px solid var(--border)",
-          borderRadius: "12px",
-          overflow: "hidden",
-        }}
-      >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+      <Card>
+        <CardHeader>{t("section.alert_history")}</CardHeader>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
-              {["Severity","Resource","Type","Actual","Deviation","Triggered","Status",""].map((h, i) => (
+              {([
+                { key: "th.severity", align: "center" },
+                { key: "th.resource", align: "left" },
+                { key: "th.type", align: "center" },
+                { key: "th.actual", align: "right" },
+                { key: "th.deviation", align: "right" },
+                { key: "th.triggered", align: "center" },
+                { key: "th.status", align: "center" },
+                { label: "", align: "center" },
+              ] as const).map((col, idx, arr) => (
                 <th
-                  key={i}
+                  key={idx}
                   style={{
-                    padding: i === 0 ? "0 8px 12px 0" : i === 7 ? "0 0 12px 8px" : "0 8px 12px",
-                    textAlign: i === 0 || i === 7 ? "left" : "left",
-                    color: "var(--text-muted)",
+                    textAlign: col.align as "left" | "right" | "center",
+                    padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     fontWeight: 600,
-                    fontSize: "11px",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
+                    color: "var(--text-tertiary)",
                   }}
                 >
-                  {h}
+                  {"key" in col ? t(col.key as "th.severity") : ""}
                 </th>
               ))}
             </tr>
@@ -205,13 +161,13 @@ export default function AlertsClient() {
           <tbody>
             {data?.items.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "var(--text-muted)" }}>
-                  No alerts found
+                <td colSpan={8} style={{ padding: "32px", textAlign: "center", color: "var(--text-tertiary)" }}>
+                  {t("empty.no_alerts")}
                 </td>
               </tr>
             )}
             {data?.items.map((item) => (
-              <tr key={item.id} style={{ borderBottom: "1px solid var(--border)" }}>
+              <tr key={item.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.04)" }}>
                 <td style={{ padding: "10px 0", textAlign: "center" }}>
                   <SeverityBadge severity={item.severity} />
                 </td>
@@ -219,37 +175,38 @@ export default function AlertsClient() {
                   <div style={{ fontWeight: 600, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {item.resource_id}
                   </div>
-                  <div style={{ fontSize: "11px", color: "var(--text-muted)" }}>{item.cost_unit_key}</div>
+                  <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>{item.cost_unit_key}</div>
                 </td>
-                <td style={{ padding: "10px 8px", color: "var(--text-muted)" }}>{item.alert_type}</td>
-                <td style={{ padding: "10px 8px", fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
-                  {item.actual_cost != null ? `$${item.actual_cost.toFixed(2)}` : "—"}
+                <td style={{ padding: "10px 8px", textAlign: "center", color: "var(--text-secondary)" }}>{item.alert_type}</td>
+                <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--text-primary)" }}>
+                  {item.actual_cost != null ? `$${item.actual_cost.toFixed(2)}` : "--"}
                 </td>
-                <td style={{ padding: "10px 8px", fontFamily: "var(--font-mono)", color: (item.deviation_pct ?? 0) >= 0 ? "#D97757" : "#38A169" }}>
-                  {item.deviation_pct != null ? `${item.deviation_pct > 0 ? "+" : ""}${item.deviation_pct.toFixed(1)}%` : "—"}
+                <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: "var(--font-mono)", color: (item.deviation_pct ?? 0) >= 0 ? "var(--status-critical)" : "var(--status-healthy)" }}>
+                  {item.deviation_pct != null ? `${item.deviation_pct > 0 ? "+" : ""}${item.deviation_pct.toFixed(1)}%` : "--"}
                 </td>
-                <td style={{ padding: "10px 8px", color: "var(--text-muted)", fontSize: "12px", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "10px 8px", textAlign: "center", color: "var(--text-tertiary)", fontSize: "12px", whiteSpace: "nowrap" }}>
                   {item.triggered_at.slice(0, 16).replace("T", " ")}
                 </td>
                 <td style={{ padding: "10px 8px", textAlign: "center" }}>
                   <AckBadge acknowledged={item.acknowledged} />
                 </td>
-                <td style={{ padding: "10px 0 10px 8px" }}>
+                <td style={{ padding: "10px 0 10px 8px", textAlign: "center" }}>
                   {!item.acknowledged && (
                     <button
                       onClick={() => handleAck(item)}
                       disabled={acking === item.id}
                       style={{
                         padding: "4px 10px",
-                        borderRadius: "6px",
+                        borderRadius: "var(--radius-button)",
                         border: "1px solid var(--border)",
                         background: "transparent",
-                        color: "var(--text-muted)",
+                        color: "var(--text-secondary)",
                         fontSize: "11px",
+                        fontFamily: "Inter, sans-serif",
                         cursor: acking === item.id ? "wait" : "pointer",
                       }}
                     >
-                      {acking === item.id ? "…" : "Ack"}
+                      {acking === item.id ? "..." : t("action.ack")}
                     </button>
                   )}
                 </td>
@@ -257,7 +214,7 @@ export default function AlertsClient() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }

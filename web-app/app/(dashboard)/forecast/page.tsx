@@ -1,10 +1,15 @@
 import PageHeader from "@/components/layout/PageHeader";
-import { Card, CardHeader, SectionLabel } from "@/components/primitives/Card";
+import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { EmptyState, ErrorState } from "@/components/primitives/States";
 import { api } from "@/lib/api";
-import { formatCurrency, formatPct } from "@/lib/formatters";
+import { formatCurrency } from "@/lib/formatters";
+import { getT } from "@/lib/i18n/server";
 import type { ForecastItem } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Forecast — FinOps" };
 
 function VarianceText({ pct }: { pct: number | null }) {
   if (pct === null)
@@ -50,6 +55,7 @@ function SourceTag({ source }: { source: string }) {
 }
 
 export default async function ForecastPage() {
+  const t = getT();
   let data;
   try { data = await api.forecast(); }
   catch (e) { return <ErrorState message={String(e)} />; }
@@ -60,10 +66,10 @@ export default async function ForecastPage() {
       : 0;
 
   return (
-    <div style={{ maxWidth: "1100px" }}>
+    <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Forecast"
-        description="Forecast vs. actual cost variance analysis"
+        title={t("page.forecast.title")}
+        description={t("page.forecast.desc")}
       />
 
       <div
@@ -75,15 +81,15 @@ export default async function ForecastPage() {
         }}
       >
         <MetricCard
-          label="Total Forecast"
+          label={t("label.total_forecast")}
           value={formatCurrency(data.total_forecast, { compact: true })}
         />
         <MetricCard
-          label="Actual Spend"
+          label={t("label.actual_spend")}
           value={formatCurrency(data.total_actual, { compact: true })}
         />
         <MetricCard
-          label="Variance"
+          label={t("label.variance")}
           value={`${variance > 0 ? "+" : ""}${variance.toFixed(1)}%`}
           valueColor={
             Math.abs(variance) >= 20
@@ -96,21 +102,28 @@ export default async function ForecastPage() {
       </div>
 
       <Card>
-        <CardHeader>Forecast vs. Actual by Resource</CardHeader>
+        <CardHeader>{t("section.forecast_vs_actual")}</CardHeader>
         {data.items.length === 0 ? (
           <EmptyState
-            title="No forecast data"
-            description="Run the infracost_forecast or prophet_forecast asset in Dagster."
+            title={t("empty.no_forecast")}
+            description={t("empty.run_forecast")}
           />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Resource", "Source", "Forecast", "Actual", "Variance", "Range"].map((h, idx, arr) => (
+                {([
+                  { key: "th.resource", align: "left" },
+                  { key: "th.source", align: "center" },
+                  { key: "th.forecast", align: "right" },
+                  { key: "th.actual", align: "right" },
+                  { key: "th.variance", align: "right" },
+                  { key: "th.range", align: "left" },
+                ] as const).map((col, idx, arr) => (
                   <th
-                    key={h}
+                    key={col.key}
                     style={{
-                      textAlign: ["Forecast", "Actual", "Variance"].includes(h) ? "right" : h === "Source" ? "center" : "left",
+                      textAlign: col.align,
                       fontSize: "10px",
                       fontWeight: 600,
                       fontFamily: "Inter, sans-serif",
@@ -125,7 +138,7 @@ export default async function ForecastPage() {
                       borderBottom: "1px solid var(--border)",
                     }}
                   >
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>

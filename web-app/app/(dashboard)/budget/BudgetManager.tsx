@@ -7,6 +7,7 @@ import { Card, CardHeader } from "@/components/primitives/Card";
 import { EmptyState } from "@/components/primitives/States";
 import { SeverityBadge } from "@/components/status/SeverityBadge";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import type { BudgetEntry, FiltersData } from "@/lib/types";
 
 const inputStyle: React.CSSProperties = {
@@ -54,7 +55,15 @@ const iconBtn: React.CSSProperties = {
   justifyContent: "center",
 };
 
+const HEADERS = [
+  { key: "th.team" as const, align: "left" as const },
+  { key: "th.env" as const, align: "center" as const },
+  { key: "th.amount" as const, align: "right" as const },
+  { key: "th.billing_month" as const, align: "left" as const },
+] as const;
+
 export default function BudgetManager({ filters }: { filters: FiltersData }) {
+  const t = useT();
   const [entries, setEntries] = useState<BudgetEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +143,7 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
 
   return (
     <Card>
-      <CardHeader>Manage Budget Entries</CardHeader>
+      <CardHeader>{t("section.manage_budget")}</CardHeader>
 
       {error && (
         <p style={{ fontSize: "12px", color: "var(--status-critical)", marginBottom: "12px" }}>
@@ -169,7 +178,7 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
 
         <select value={newEnv} onChange={(e) => setNewEnv(e.target.value)} style={inputStyle}>
           {filters.envs.map((v) => <option key={v} value={v}>{v}</option>)}
-          <option value="*">* (all envs)</option>
+          <option value="*">{t("misc.all_envs")}</option>
         </select>
 
         <input
@@ -192,26 +201,26 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
 
         <button type="submit" style={btnPrimary} disabled={creating}>
           <Plus size={14} weight="bold" />
-          {creating ? "Adding…" : "Add budget"}
+          {creating ? t("action.adding") : t("action.add_budget")}
         </button>
       </form>
 
       {loading ? (
-        <p style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>Loading entries…</p>
+        <p style={{ fontSize: "12px", color: "var(--text-tertiary)" }}>{t("misc.loading_entries")}</p>
       ) : entries.length === 0 ? (
         <EmptyState
-          title="No budget entries"
-          description="Add a budget above or run the budget pipeline in Dagster."
+          title={t("empty.no_budget_entries")}
+          description={t("empty.add_budget_or_run")}
         />
       ) : (
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {["Team", "Env", "Amount", "Billing Month", ""].map((h, idx, arr) => (
+              {HEADERS.map((col, idx) => (
                 <th
-                  key={h || `action-${idx}`}
+                  key={col.key}
                   style={{
-                    textAlign: h === "Amount" ? "right" : h === "Env" ? "center" : "left",
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -220,15 +229,19 @@ export default function BudgetManager({ filters }: { filters: FiltersData }) {
                     textTransform: "uppercase",
                     padding: idx === 0
                       ? "0 8px 12px 0"
-                      : idx === arr.length - 1
-                      ? "0 0 12px 8px"
                       : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  {h}
+                  {t(col.key)}
                 </th>
               ))}
+              <th
+                style={{
+                  padding: "0 0 12px 8px",
+                  borderBottom: "1px solid var(--border)",
+                }}
+              />
             </tr>
           </thead>
           <tbody>

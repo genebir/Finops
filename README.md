@@ -8,7 +8,7 @@
 2. **"이상하게 튄 비용이 있어?"** — Z-score · IsolationForest · MovingAverage 멀티 탐지기
 3. **"예측이랑 실제가 얼마나 달라?"** — Infracost(Terraform) + Prophet(시계열) Variance 분석
 4. **"예산 대비 현황은?"** — 팀/환경별 예산 관리, 초과 알림, Chargeback 리포트
-5. **"전체 현황을 한눈에 보고 싶다"** — Streamlit 웹 대시보드 (6개 탭)
+5. **"전체 현황을 한눈에 보고 싶다"** — Next.js 모니터링 대시보드 (30개 페이지, i18n EN/KO) + Streamlit 내부 디버깅용
 
 ## 아키텍처
 
@@ -57,7 +57,9 @@ scripts/streamlit_app.py (Streamlit 웹 대시보드)
 | ML Anomaly | scikit-learn ≥1.4, statsmodels ≥0.14 | IsolationForest / ARIMA 이상치 탐지 |
 | Alerting | slack-sdk ≥3.0 / smtplib | Slack Webhook + 이메일 알림 |
 | CLI Dashboard | Rich ≥13.0 | 터미널 대시보드 |
-| Web Dashboard | Streamlit ≥1.35 + Plotly ≥5.0 | 웹 대시보드 |
+| Web Dashboard | Streamlit ≥1.35 + Plotly ≥5.0 | 웹 대시보드 (내부 디버깅용) |
+| Monitoring UI | Next.js 14 + Tailwind | 모니터링 대시보드 (30페이지) |
+| API Server | FastAPI | REST API (35+ 엔드포인트) |
 | Standard | FOCUS 1.0 | 비용 데이터 규격 |
 | Language | Python 3.14+ | |
 | Package Mgmt | uv | |
@@ -82,8 +84,16 @@ uv sync
 # 환경 설정
 cp .env.example .env
 
-# DB 스키마 부트스트랩
-uv run python scripts/init_db.py
+# 원커맨드 개발환경 셋업 (테이블 + 시드 + asset 실행 + 뷰)
+uv run python scripts/setup.py --all
+# 이미 완료된 단계는 자동 스킵, 언제든 재실행 가능
+
+# 개별 단계 실행도 가능:
+uv run python scripts/setup.py --status        # 현재 상태 확인
+uv run python scripts/setup.py --tables        # 테이블만 생성
+uv run python scripts/setup.py --seed          # 설정·예산 시드
+uv run python scripts/setup.py --materialize   # Dagster asset 실행
+uv run python scripts/setup.py --views         # SQL 뷰 생성
 
 # Infracost CLI 설치 (선택)
 curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
@@ -93,10 +103,14 @@ infracost configure set api_key <YOUR_KEY>
 uv run dagster dev
 # → http://localhost:3000 → 전체 assets materialize
 
+# 모니터링 대시보드 (Next.js + FastAPI)
+cd web-app && npm run dev    # → http://localhost:3002
+uv run uvicorn api.main:app  # → http://localhost:8000
+
 # 터미널 대시보드 (Rich CLI)
 uv run python scripts/dashboard.py --month 2024-01
 
-# 웹 대시보드 (Streamlit)
+# 웹 대시보드 (Streamlit, 내부 디버깅용)
 uv run streamlit run scripts/streamlit_app.py
 
 # 테스트 (커버리지 포함)
@@ -147,18 +161,28 @@ finops-platform/
 │   ├── detectors/              # ZScore, IsolationForest, MovingAverage
 │   ├── generators/             # 가상 AWS/GCP/Azure CUR 생성기
 │   ├── providers/              # ProphetProvider, StaticFxProvider
-│   ├── resources/              # Dagster Resource 래퍼 (DuckDB, Iceberg, Budget 등)
+│   ├── resources/              # Dagster Resource 래퍼 (DuckDB→PostgreSQL, Iceberg, Budget 등)
 │   ├── schemas/                # FOCUS 1.0 Pydantic 스키마
 │   ├── sinks/                  # ConsoleSink, SlackSink, EmailSink
 │   └── utils/                  # flatten_tags 등 공유 유틸
+├── api/                        # FastAPI 백엔드 (35+ 엔드포인트)
+│   ├── main.py                 # 앱 엔트리 (CORS, 라우터 등록)
+│   ├── deps.py                 # db_read/db_write (psycopg2)
+│   ├── models/                 # Pydantic 요청/응답 모델
+│   └── routers/                # 도메인별 API 라우터 (30+개)
+├── web-app/                    # Next.js 14 모니터링 대시보드 (30페이지, i18n EN/KO)
+│   ├── app/(dashboard)/        # 페이지 (overview, anomalies, budget, ...)
+│   ├── components/             # Card, MetricCard, Sidebar, PageHeader
+│   └── lib/                    # API 클라이언트, i18n, 타입 정의
 ├── scripts/
+│   ├── setup.py                # 멱등 개발환경 셋업 (--all로 전체 부트스트랩)
+│   ├── init_db.py              # DB 스키마 부트스트랩 CLI
 │   ├── dashboard.py            # Rich CLI 대시보드
-│   └── streamlit_app.py        # Streamlit 웹 대시보드 (6탭)
-├── sql/marts/                  # DuckDB DDL / View SQL
+│   └── streamlit_app.py        # Streamlit 웹 대시보드 (내부 디버깅용)
+├── sql/marts/                  # PostgreSQL DDL / View SQL
 ├── terraform/sample/           # Infracost 분석 대상 IaC (EC2/RDS/S3)
-├── tests/                      # pytest 테스트 (371개)
+├── tests/                      # pytest 테스트 (631개)
 ├── install.sh                  # 크로스플랫폼 원커맨드 인스톨러
-├── scripts/init_db.py          # DB 스키마 부트스트랩 CLI
 └── data/                       # 생성된 데이터 (gitignored)
     ├── warehouse/              # Iceberg 데이터
     ├── catalog.db              # SqlCatalog SQLite
@@ -211,3 +235,4 @@ finops-platform/
 | Phase 38 | Overview 페이지 강화 (provider breakdown + 6개월 trend sparkline + resource 드릴다운 링크) | **570 / pass** |
 | Phase 39 | Cost Heatmap 대시보드 + Cloud Config 대시보드 (provider 연결 설정 인라인 편집 UI) | **591 / pass** |
 | Phase 40 | Team Detail API `/api/teams/{team}` + 드릴다운 페이지 + Leaderboard 링크 | **601 / pass** |
+| Phase 40.1 | 프로덕션 준비 (i18n 완성, 메타데이터, 레이아웃 표준화) + `scripts/setup.py` 멱등 셋업 | **631 / pass** |

@@ -3,7 +3,9 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Cost Risk — FinOps" };
 
 interface RiskItem {
@@ -43,6 +45,7 @@ async function fetchRisk(): Promise<RiskData> {
 }
 
 export default async function RiskPage() {
+  const t = getT();
   let data: RiskData;
   try {
     data = await fetchRisk();
@@ -52,29 +55,37 @@ export default async function RiskPage() {
 
   const { summary, items, billing_month } = data;
   const topRisk = items.filter((i) => i.risk_score > 0).slice(0, 3);
-  const headers = ["Resource", "Team", "Provider", "Service", "Cost", "Anomalies", "Risk Score"];
+
+  const HEADERS = [
+    { key: "th.resource", align: "left" },
+    { key: "th.team", align: "left" },
+    { key: "th.provider", align: "center" },
+    { key: "th.service", align: "left" },
+    { key: "th.cost", align: "right" },
+    { key: "th.anomalies", align: "center" },
+    { key: "th.risk_score", align: "left" },
+  ] as const;
 
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Cost Risk"
-        description={`${billing_month} — resources ranked by cost × anomaly frequency${!summary.has_anomaly_data ? " (anomaly data not yet available)" : ""}`}
+        title={t("page.risk.title")}
+        description={`${billing_month}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "16px", marginBottom: "32px" }}>
-        <MetricCard label="Resources" value={String(summary.total_resources)} />
+        <MetricCard label={t("label.resources")} value={String(summary.total_resources)} />
         <MetricCard
-          label="Total Cost"
+          label={t("label.total_cost")}
           value={`$${summary.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
         />
         <MetricCard
-          label="Anomaly Events"
+          label={t("label.anomaly_events")}
           value={String(summary.total_anomalies)}
           valueColor={summary.total_anomalies > 0 ? "var(--status-critical)" : undefined}
         />
       </div>
 
-      {/* Top risk callouts */}
       {topRisk.length > 0 && (
         <div style={{
           background: "color-mix(in srgb, var(--status-critical) 8%, transparent)",
@@ -84,14 +95,14 @@ export default async function RiskPage() {
           marginBottom: "20px",
         }}>
           <div style={{ fontSize: "10px", fontWeight: 600, fontFamily: "Inter, sans-serif", color: "var(--status-critical)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: "8px" }}>
-            High Risk Resources
+            {t("section.high_risk")}
           </div>
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
             {topRisk.map((item) => (
               <div key={item.resource_id} style={{ fontSize: "12px", color: "var(--text-primary)" }}>
                 <span style={{ fontWeight: 600 }}>{item.resource_id}</span>
                 <span style={{ color: "var(--text-secondary)", marginLeft: "6px" }}>
-                  ${item.total_cost.toFixed(0)} · {item.anomaly_count} anomalies
+                  ${item.total_cost.toFixed(0)} · {item.anomaly_count} {t("th.anomalies").toLowerCase()}
                 </span>
               </div>
             ))}
@@ -100,16 +111,16 @@ export default async function RiskPage() {
       )}
 
       <Card>
-        <CardHeader>All Resources by Risk Score</CardHeader>
+        <CardHeader>{t("section.all_by_risk")}</CardHeader>
         {items.length === 0 ? (
-          <EmptyState title="No risk data" description="Run gold_marts and anomaly_detection assets first." />
+          <EmptyState title={t("empty.no_risk")} description={t("empty.run_anomaly")} />
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {headers.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: "left",
+                {HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -119,7 +130,7 @@ export default async function RiskPage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -134,13 +145,13 @@ export default async function RiskPage() {
                     <div style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>{item.env}</div>
                   </td>
                   <td style={{ padding: "10px 8px", fontSize: "13px", color: "var(--text-secondary)" }}>{item.team}</td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <span style={{ fontSize: "11px", fontWeight: 700, color: PROV_COLOR[item.provider] ?? "var(--text-secondary)" }}>
                       {item.provider.toUpperCase()}
                     </span>
                   </td>
                   <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>{item.service_name}</td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "right" }}>
                     <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
                       ${item.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </span>

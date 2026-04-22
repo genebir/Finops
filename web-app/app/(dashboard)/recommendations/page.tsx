@@ -5,15 +5,21 @@ import { EmptyState, ErrorState } from "@/components/primitives/States";
 import { SeverityBadge } from "@/components/status/SeverityBadge";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/formatters";
+import { getT } from "@/lib/i18n/server";
 import type { RecommendationItem } from "@/lib/types";
 
-const RULE_META: Record<string, { label: string; color: string; bg: string }> = {
-  idle:               { label: "Idle Resource",     color: "var(--provider-gcp)",      bg: "rgba(107,140,174,0.08)" },
-  high_growth:        { label: "High Growth",        color: "var(--status-warning)",    bg: "rgba(232,160,74,0.08)"  },
-  persistent_anomaly: { label: "Persistent Anomaly", color: "var(--status-critical)",   bg: "rgba(200,85,61,0.08)"   },
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Recommendations — FinOps" };
+
+const RULE_META: Record<string, { labelKey: "misc.idle_resource" | "misc.high_growth" | "misc.persistent_anomaly"; color: string; bg: string }> = {
+  idle:               { labelKey: "misc.idle_resource",     color: "var(--provider-gcp)",      bg: "rgba(107,140,174,0.08)" },
+  high_growth:        { labelKey: "misc.high_growth",        color: "var(--status-warning)",    bg: "rgba(232,160,74,0.08)"  },
+  persistent_anomaly: { labelKey: "misc.persistent_anomaly", color: "var(--status-critical)",   bg: "rgba(200,85,61,0.08)"   },
 };
 
 export default async function RecommendationsPage() {
+  const t = getT();
   let data;
   try { data = await api.recommendations(); }
   catch (e) { return <ErrorState message={String(e)} />; }
@@ -24,10 +30,10 @@ export default async function RecommendationsPage() {
   }, {});
 
   return (
-    <div style={{ maxWidth: "1000px" }}>
+    <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Recommendations"
-        description="Cost optimization recommendations — run the cost_recommendations asset in Dagster to populate data."
+        title={t("page.recommendations.title")}
+        description={t("page.recommendations.desc")}
       />
 
       <div
@@ -39,16 +45,16 @@ export default async function RecommendationsPage() {
         }}
       >
         <MetricCard
-          label="Total Recommendations"
+          label={t("label.total_recommendations")}
           value={String(data.items.length)}
         />
         <MetricCard
-          label="Potential Savings"
+          label={t("label.potential_savings")}
           value={data.total_potential_savings > 0 ? formatCurrency(data.total_potential_savings, { compact: true }) : "—"}
           valueColor="var(--status-healthy)"
         />
         <MetricCard
-          label="Rule Types"
+          label={t("label.rule_types")}
           value={String(Object.keys(byRule).length)}
         />
       </div>
@@ -56,14 +62,17 @@ export default async function RecommendationsPage() {
       {data.items.length === 0 ? (
         <Card>
           <EmptyState
-            title="No recommendations"
-            description="Run the cost_recommendations asset in Dagster."
+            title={t("empty.no_recommendations")}
+            description={t("empty.run_anomaly")}
           />
         </Card>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           {Object.entries(byRule).map(([rule, items]) => {
-            const meta = RULE_META[rule] ?? { label: rule, color: "var(--text-tertiary)", bg: "rgba(168,159,148,0.08)" };
+            const meta = RULE_META[rule];
+            const label = meta ? t(meta.labelKey) : rule;
+            const color = meta?.color ?? "var(--text-tertiary)";
+            const bg = meta?.bg ?? "rgba(168,159,148,0.08)";
             return (
               <Card key={rule}>
                 <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
@@ -74,27 +83,34 @@ export default async function RecommendationsPage() {
                       fontFamily: "Inter, sans-serif",
                       letterSpacing: "0.07em",
                       textTransform: "uppercase",
-                      color: meta.color,
-                      background: meta.bg,
-                      border: `1px solid ${meta.color}`,
+                      color,
+                      background: bg,
+                      border: `1px solid ${color}`,
                       borderRadius: "var(--radius-full)",
                       padding: "3px 10px",
                     }}
                   >
-                    {meta.label}
+                    {label}
                   </span>
                   <span style={{ fontSize: "12px", color: "var(--text-tertiary)", fontFamily: "Inter, sans-serif" }}>
-                    {items.length} item{items.length !== 1 ? "s" : ""}
+                    {items.length} {items.length !== 1 ? t("misc.items") : t("misc.item")}
                   </span>
                 </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
-                      {["Resource", "Team", "Env", "Description", "Savings", "Severity"].map((h, idx, arr) => (
+                      {([
+                        { key: "th.resource", align: "left" },
+                        { key: "th.team", align: "left" },
+                        { key: "th.env", align: "center" },
+                        { key: "th.description", align: "left" },
+                        { key: "th.savings", align: "right" },
+                        { key: "th.severity", align: "center" },
+                      ] as const).map((col, idx, arr) => (
                         <th
-                          key={h}
+                          key={col.key}
                           style={{
-                            textAlign: h === "Savings" ? "right" : ["Env", "Severity"].includes(h) ? "center" : "left",
+                            textAlign: col.align,
                             fontSize: "10px",
                             fontWeight: 600,
                             fontFamily: "Inter, sans-serif",
@@ -109,7 +125,7 @@ export default async function RecommendationsPage() {
                             borderBottom: "1px solid var(--border)",
                           }}
                         >
-                          {h}
+                          {t(col.key)}
                         </th>
                       ))}
                     </tr>

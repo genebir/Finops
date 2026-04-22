@@ -26,6 +26,7 @@ from .routers import (
     cost_heatmap,
     cost_risk,
     leaderboard,
+    pipeline,
     resource_detail,
     savings,
     service_breakdown,
@@ -102,3 +103,4 @@ app.include_router(tag_compliance.router)
 app.include_router(anomaly_timeline.router)
 app.include_router(cloud_config.router)
 app.include_router(team_detail.router)
+app.include_router(pipeline.router)

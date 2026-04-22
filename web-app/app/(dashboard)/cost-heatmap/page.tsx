@@ -5,8 +5,11 @@ import { ErrorState } from "@/components/primitives/States";
 import { api } from "@/lib/api";
 import { formatCurrency } from "@/lib/formatters";
 import type { CostHeatmapData } from "@/lib/types";
+import { getT } from "@/lib/i18n/server";
 
 export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Cost Heatmap — FinOps" };
 
 function heatColor(value: number, max: number): string {
   if (max === 0) return "transparent";
@@ -24,6 +27,7 @@ function formatDay(dateStr: string): string {
 }
 
 export default async function CostHeatmapPage() {
+  const t = getT();
   let data: CostHeatmapData;
   try {
     data = await api.costHeatmap();
@@ -51,8 +55,8 @@ export default async function CostHeatmapPage() {
   return (
     <div style={{ maxWidth: "1400px" }}>
       <PageHeader
-        title="Cost Heatmap"
-        description={`Daily team cost matrix — ${billing_month}`}
+        title={t("page.cost_heatmap.title")}
+        description={`${t("page.cost_heatmap.desc")} — ${billing_month}`}
       />
 
       <div
@@ -64,39 +68,39 @@ export default async function CostHeatmapPage() {
         }}
       >
         <MetricCard
-          label="Total Cost"
+          label={t("label.total_cost")}
           value={formatCurrency(totalCost, { compact: true })}
           sub={billing_month}
         />
         <MetricCard
-          label="Teams"
+          label={t("label.teams")}
           value={String(teamCount)}
-          sub="active this month"
+          sub={t("misc.active_this_month")}
         />
         <MetricCard
-          label="Days"
+          label={t("label.days")}
           value={String(dayCount)}
-          sub="with data"
+          sub={t("misc.with_data")}
         />
         <MetricCard
-          label="Avg / Team"
+          label={t("label.avg_per_team")}
           value={formatCurrency(avgPerTeam, { compact: true })}
-          sub="this month"
+          sub={t("misc.this_month")}
         />
       </div>
 
       {matrix.length === 0 ? (
         <Card>
           <p style={{ fontSize: "13px", color: "var(--text-tertiary)" }}>
-            No heatmap data available. Materialize the cost pipeline in Dagster first.
+            {t("misc.no_heatmap_data")}
           </p>
         </Card>
       ) : (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <CardHeader>Daily Cost by Team</CardHeader>
+            <CardHeader>{t("section.daily_cost_by_team")}</CardHeader>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>Low</span>
+              <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>{t("misc.low")}</span>
               <div style={{ display: "flex", gap: "2px" }}>
                 {[0.1, 0.3, 0.5, 0.7, 0.9, 1.0].map((v) => (
                   <div
@@ -111,7 +115,7 @@ export default async function CostHeatmapPage() {
                 ))}
               </div>
               <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
-                High ({formatCurrency(max_cost, { compact: true })})
+                {t("misc.high")} ({formatCurrency(max_cost, { compact: true })})
               </span>
             </div>
           </div>
@@ -222,22 +226,22 @@ export default async function CostHeatmapPage() {
       {peakDay && dayTotals[peakDayIdx] > 0 && (
         <div style={{ marginTop: "20px" }}>
           <Card>
-            <CardHeader>Peak Day</CardHeader>
+            <CardHeader>{t("section.peak_day")}</CardHeader>
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
               <div>
-                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>Date</div>
+                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>{t("th.date")}</div>
                 <div className="font-mono" style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)" }}>
                   {peakDay}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>Total Cost</div>
+                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>{t("label.total_cost")}</div>
                 <div className="font-mono" style={{ fontSize: "15px", fontWeight: 600, color: "var(--text-primary)" }}>
                   {formatCurrency(dayTotals[peakDayIdx] ?? 0)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>vs Monthly Avg/Day</div>
+                <div style={{ fontSize: "11px", color: "var(--text-tertiary)", marginBottom: "4px" }}>{t("misc.vs_monthly_avg")}</div>
                 <div
                   className="font-mono"
                   style={{

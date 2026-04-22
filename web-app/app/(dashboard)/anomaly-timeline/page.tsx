@@ -3,6 +3,11 @@ import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { MetricCard } from "@/components/primitives/MetricCard";
 import { ErrorState, EmptyState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
+
+export const dynamic = "force-dynamic";
+
+export const metadata = { title: "Anomaly Timeline — FinOps" };
 
 interface SeriesPoint {
   date: string;
@@ -53,9 +58,14 @@ function Sparkbar({ value, max, critical, warning }: { value: number; max: numbe
   );
 }
 
-const topTeamHeaders = ["Team", "Anomalies", "Total Anomalous Cost"];
+const TOP_TEAM_HEADERS = [
+  { key: "th.team", align: "left" },
+  { key: "th.anomalies", align: "center" },
+  { key: "th.anomalous_cost", align: "right" },
+] as const;
 
 export default async function AnomalyTimelinePage() {
+  const t = getT();
   let data: TimelineData;
   try {
     data = await fetchTimeline(6);
@@ -69,33 +79,33 @@ export default async function AnomalyTimelinePage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Anomaly Timeline"
-        description="Daily anomaly counts over the past 6 months — critical / warning breakdown"
+        title={t("page.anomaly_timeline.title")}
+        description={t("page.anomaly_timeline.desc")}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "16px", marginBottom: "32px" }}>
         <MetricCard
-          label="Total Anomalies"
+          label={t("label.total_anomalies")}
           value={summary.total_anomalies.toLocaleString()}
         />
         <MetricCard
-          label="Peak Day"
+          label={t("label.peak_day")}
           value={summary.peak_date ?? "—"}
           valueColor="var(--status-critical)"
         />
         <MetricCard
-          label="Peak Count"
+          label={t("label.peak_count")}
           value={summary.peak_count.toLocaleString()}
           valueColor="var(--status-critical)"
         />
         <MetricCard
-          label="Avg / Day"
+          label={t("label.avg_per_day")}
           value={summary.avg_daily.toFixed(1)}
         />
       </div>
 
       <Card style={{ marginBottom: "24px" }}>
-        <CardHeader>Daily Anomaly Count</CardHeader>
+        <CardHeader>{t("section.daily_anomaly_count")}</CardHeader>
         {series.length === 0 ? (
           <EmptyState title="No anomaly data" description="No anomalies found for this period." />
         ) : (
@@ -132,13 +142,13 @@ export default async function AnomalyTimelinePage() {
 
       {top_teams.length > 0 && (
         <Card>
-          <CardHeader>Top Impacted Teams</CardHeader>
+          <CardHeader>{t("section.top_impacted_teams")}</CardHeader>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {topTeamHeaders.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: "left",
+                {TOP_TEAM_HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -148,26 +158,26 @@ export default async function AnomalyTimelinePage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {top_teams.map((t, i, arr) => (
-                <tr key={t.team} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
+              {top_teams.map((tm, i, arr) => (
+                <tr key={tm.team} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
                   <td style={{ padding: "10px 0", fontSize: "13px", fontWeight: 600, color: "var(--text-primary)" }}>
                     <span style={{ marginRight: "8px", color: "var(--text-tertiary)", fontSize: "12px" }}>#{i + 1}</span>
-                    {t.team}
+                    {tm.team}
                   </td>
-                  <td style={{ padding: "10px 8px" }}>
+                  <td style={{ padding: "10px 8px", textAlign: "center" }}>
                     <span className="font-mono" style={{ fontSize: "13px", color: "var(--status-critical)" }}>
-                      {t.anomaly_count.toLocaleString()}
+                      {tm.anomaly_count.toLocaleString()}
                     </span>
                   </td>
-                  <td style={{ padding: "10px 0 10px 8px" }}>
+                  <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
                     <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
-                      ${t.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                      ${tm.total_cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
                     </span>
                   </td>
                 </tr>

@@ -2,7 +2,9 @@ import { API_BASE } from "../../../lib/api";
 import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
 import { ErrorState } from "@/components/primitives/States";
+import { getT } from "@/lib/i18n/server";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Services — FinOps" };
 
 interface CategoryItem { category: string; cost: number; resource_count: number; pct: number }
@@ -37,9 +39,14 @@ function PctBar({ pct, color }: { pct: number; color: string }) {
   );
 }
 
-const svcHeaders = ["Service", "Category", "Cost"];
+const SVC_HEADERS = [
+  { key: "th.service", align: "left" },
+  { key: "th.category", align: "center" },
+  { key: "th.cost", align: "right" },
+] as const;
 
 export default async function ServicesPage() {
+  const t = getT();
   let data: ServiceBreakdownData;
   try {
     data = await fetchServices();
@@ -52,14 +59,14 @@ export default async function ServicesPage() {
   return (
     <div style={{ maxWidth: "1200px" }}>
       <PageHeader
-        title="Service Breakdown"
-        description={`${billing_month} — total $${grand_total.toLocaleString("en-US", { maximumFractionDigits: 0 })} by service category`}
+        title={t("page.services.title")}
+        description={`${billing_month} — total $${grand_total.toLocaleString("en-US", { maximumFractionDigits: 0 })}`}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
         {/* By category */}
         <Card>
-          <CardHeader>By Service Category</CardHeader>
+          <CardHeader>{t("section.by_service_category")}</CardHeader>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             {by_category.map((cat, idx) => {
               const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
@@ -86,13 +93,13 @@ export default async function ServicesPage() {
 
         {/* By service name */}
         <Card>
-          <CardHeader>Top Services</CardHeader>
+          <CardHeader>{t("section.top_services")}</CardHeader>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {svcHeaders.map((h, idx, arr) => (
-                  <th key={h} style={{
-                    textAlign: idx === arr.length - 1 ? "right" : "left",
+                {SVC_HEADERS.map((col, idx, arr) => (
+                  <th key={col.key} style={{
+                    textAlign: col.align,
                     fontSize: "10px",
                     fontWeight: 600,
                     fontFamily: "Inter, sans-serif",
@@ -102,7 +109,7 @@ export default async function ServicesPage() {
                     padding: idx === 0 ? "0 8px 12px 0" : idx === arr.length - 1 ? "0 0 12px 8px" : "0 8px 12px 8px",
                     borderBottom: "1px solid var(--border)",
                   }}>
-                    {h}
+                    {t(col.key)}
                   </th>
                 ))}
               </tr>
@@ -113,7 +120,7 @@ export default async function ServicesPage() {
                   <td style={{ padding: "10px 0", color: "var(--text-primary)", fontSize: "13px", maxWidth: "140px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {svc.service_name}
                   </td>
-                  <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)" }}>{svc.category}</td>
+                  <td style={{ padding: "10px 8px", fontSize: "12px", color: "var(--text-secondary)", textAlign: "center" }}>{svc.category}</td>
                   <td style={{ padding: "10px 0 10px 8px", textAlign: "right" }}>
                     <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
                       ${svc.cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}
