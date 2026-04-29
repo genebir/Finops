@@ -230,6 +230,7 @@ export const translations = {
   "page.pipeline.title": { en: "Pipeline", ko: "파이프라인" },
   "page.pipeline.desc": { en: "Trigger data pipeline runs without accessing Dagster directly.", ko: "Dagster에 직접 접속하지 않고 데이터 파이프라인을 실행합니다." },
   "page.service_detail.desc": { en: "Service cost analysis", ko: "서비스 비용 분석" },
+  "page.env_detail.desc": { en: "Environment cost analysis", ko: "환경별 비용 분석" },
   "page.cost_explorer.title": { en: "Cost Explorer", ko: "비용 탐색" },
   "page.cost_explorer.desc": { en: "Explore costs across teams, services, providers, and time.", ko: "팀, 서비스, 프로바이더, 기간별 비용을 탐색합니다." },
   "page.settings.title": { en: "Settings", ko: "설정" },

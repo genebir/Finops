@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { API_BASE } from "@/lib/api";
 import PageHeader from "@/components/layout/PageHeader";
 import { Card, CardHeader } from "@/components/primitives/Card";
@@ -130,14 +131,16 @@ export default async function EnvBreakdownPage() {
             {data.envs.map((env, i, arr) => (
               <tr key={env.env} style={{ borderBottom: i < arr.length - 1 ? "1px solid var(--border)" : "none" }}>
                 <td style={{ padding: "10px 0" }}>
-                  <span style={{
-                    display: "inline-block", padding: "2px 8px", borderRadius: "4px",
-                    fontSize: "12px", fontWeight: 600,
-                    backgroundColor: `${envColor(env.env)}22`,
-                    color: envColor(env.env),
-                  }}>
-                    {env.env}
-                  </span>
+                  <Link href={`/environments/${encodeURIComponent(env.env)}`} style={{ textDecoration: "none" }}>
+                    <span style={{
+                      display: "inline-block", padding: "2px 8px", borderRadius: "4px",
+                      fontSize: "12px", fontWeight: 600,
+                      backgroundColor: `${envColor(env.env)}22`,
+                      color: envColor(env.env),
+                    }}>
+                      {env.env}
+                    </span>
+                  </Link>
                 </td>
                 <td style={{ padding: "10px 8px", textAlign: "right" }}>
                   <span className="font-mono" style={{ fontSize: "13px", color: "var(--text-primary)" }}>
@@ -187,14 +190,16 @@ export default async function EnvBreakdownPage() {
             {data.envs.map((env, i, envArr) => (
               <tr key={env.env} style={{ borderBottom: i < envArr.length - 1 ? "1px solid var(--border)" : "none" }}>
                 <td style={{ padding: "10px 8px 10px 0" }}>
-                  <span style={{
-                    display: "inline-block", padding: "2px 8px", borderRadius: "4px",
-                    fontSize: "12px", fontWeight: 600,
-                    backgroundColor: `${envColor(env.env)}22`,
-                    color: envColor(env.env),
-                  }}>
-                    {env.env}
-                  </span>
+                  <Link href={`/environments/${encodeURIComponent(env.env)}`} style={{ textDecoration: "none" }}>
+                    <span style={{
+                      display: "inline-block", padding: "2px 8px", borderRadius: "4px",
+                      fontSize: "12px", fontWeight: 600,
+                      backgroundColor: `${envColor(env.env)}22`,
+                      color: envColor(env.env),
+                    }}>
+                      {env.env}
+                    </span>
+                  </Link>
                 </td>
                 {allTeams.map((t, tidx, tArr) => {
                   const cost = crossTabMap[env.env]?.[t];

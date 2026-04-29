@@ -23,6 +23,7 @@ from .routers import (
     budget_forecast,
     cloud_compare,
     env_breakdown,
+    env_detail,
     cost_heatmap,
     cost_risk,
     leaderboard,
@@ -101,6 +102,7 @@ app.include_router(service_breakdown.router)
 app.include_router(service_detail.router)
 app.include_router(budget_forecast.router)
 app.include_router(env_breakdown.router)
+app.include_router(env_detail.router)
 app.include_router(tag_compliance.router)
 app.include_router(anomaly_timeline.router)
 app.include_router(cloud_config.router)

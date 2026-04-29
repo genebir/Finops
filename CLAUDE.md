@@ -2,7 +2,7 @@
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
 > Phase 1 → … → Phase 40 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 41 완료 — Service Detail 드릴다운 `/api/services/{service_name}` + `/services/[service]` 페이지 + Services 링크 연결, **641 tests pass**.
+> **현재 상태:** Phase 42 완료 — Environment Detail 드릴다운 `/api/environments/{env}` + `/environments/[env]` 페이지 + Env Breakdown 링크 연결, **651 tests pass**.
 
 ---
 
@@ -1410,9 +1410,34 @@ uv run mypy dagster_project
 
 - **641 tests pass** ✅
 
+### Phase 42 — Environment Detail 드릴다운
+
+- `api/routers/env_detail.py` — `GET /api/environments/{env}?months=N`
+  - 404 반환 (환경 미존재 시)
+  - `monthly_trend`: 최근 N개월 환경별 비용 + 리소스 수
+  - `by_team`: 당월 팀별 비용 + pct (전체)
+  - `by_provider`: 당월 provider별 비용 + pct
+  - `by_service`: 당월 서비스별 비용 Top-10 + pct
+  - `top_resources`: 당월 리소스별 비용 Top-10
+  - `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, team_count
+- `api/main.py` — `env_detail` 라우터 등록
+- `api/routers/__init__.py` — `env_detail` 추가
+- `web-app/app/(dashboard)/environments/[env]/page.tsx` — Server Component
+  - ← Env Breakdown 뒤로 링크
+  - KPI 카드 4개 (당월 비용, MoM%, 리소스 수, 팀 수)
+  - 6개월 trend sparkline 바 차트 (env 색상 토큰 적용: prod orange, staging purple, dev blue, test green)
+  - 팀별/Provider별 TrendBar (팀명 → `/teams/{team}` 링크)
+  - Top Services 표 (서비스명 → `/services/{service}` 링크)
+  - Top Resources 표 (resource_id → `/resources/{id}` 링크)
+- `web-app/app/(dashboard)/env-breakdown/page.tsx` — env 뱃지에 `/environments/{env}` 링크 (cost-by-env + cost-matrix 양쪽)
+- `web-app/lib/i18n/translations.ts` — `page.env_detail.desc` 키 추가
+- `tests/test_api_env_detail.py` (10개) — shape/404/sorted/pct/months param 검증
+
+- **651 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 41 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 42 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 
@@ -1449,6 +1474,7 @@ uv run mypy dagster_project
 | `/resources/[id]` | `/api/resources/{resource_id}` | 리소스 드릴다운: 일별 비용, 월별 히스토리, 이상치 |
 | `/teams/[team]` | `/api/teams/{team}` | 팀 드릴다운: 트렌드, 서비스/환경/provider 분석, 리소스 |
 | `/services/[service]` | `/api/services/{service_name}` | 서비스 드릴다운: 트렌드, 팀/환경/provider 분석, 리소스 |
+| `/environments/[env]` | `/api/environments/{env}` | 환경 드릴다운: 트렌드, 팀/서비스/provider 분석, 리소스 |
 
 ### 구현 완료된 API 엔드포인트 전체 목록
 
@@ -1489,6 +1515,7 @@ uv run mypy dagster_project
 | `GET /api/cloud-config`, `PUT` | `routers/cloud_config.py` | `test_api_cloud_config.py` |
 | `GET /api/cloud-config/status` | `routers/cloud_config.py` | `test_api_cloud_config.py` |
 | `GET /api/teams/{team}` | `routers/team_detail.py` | `test_api_team_detail.py` |
+| `GET /api/environments/{env}` | `routers/env_detail.py` | `test_api_env_detail.py` |
 | `GET /health` | `main.py` | — |
 
 ---
@@ -1526,30 +1553,6 @@ uv run mypy dagster_project
 - `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
 
 **검증:** `601 + ~10 = ~611 tests pass`
-
----
-
-### Phase 42 — Environment Detail 드릴다운
-
-**목표:** 환경명 클릭 시 해당 환경의 상세 분석 페이지로 이동
-
-**API: `GET /api/environments/{env}?months=6`**
-- 404 반환 (환경 미존재 시)
-- `monthly_trend`: 최근 N개월 환경별 비용
-- `by_team`: 당월 팀별 비용 + pct
-- `by_provider`: 당월 provider별 비용 + pct
-- `by_service`: 당월 서비스별 비용 Top-10 + pct
-- `top_resources`: 당월 리소스별 비용 Top-10
-- `summary`: curr_cost, prev_cost, mom_change_pct, resource_count, team_count
-
-**파일:**
-- `api/routers/env_detail.py` — APIRouter, prefix `/api/environments`
-- `web-app/app/(dashboard)/environments/[env]/page.tsx` — Server Component
-  - 구조: `/teams/[team]/page.tsx`와 동일한 레이아웃 패턴
-- `web-app/app/(dashboard)/env-breakdown/page.tsx` — 환경명에 링크 추가
-- `tests/test_api_env_detail.py` (10개)
-
-**검증:** `~611 + ~10 = ~621 tests pass`
 
 ---
 
