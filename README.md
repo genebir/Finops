@@ -237,3 +237,5 @@ finops-platform/
 | Phase 40 | Team Detail API `/api/teams/{team}` + 드릴다운 페이지 + Leaderboard 링크 | **601 / pass** |
 | Phase 40.1 | 프로덕션 준비 (i18n 완성, 메타데이터, 레이아웃 표준화) + `scripts/setup.py` 멱등 셋업 | **631 / pass** |
 | Phase 41 | Service Detail 드릴다운 `/api/services/{service_name}` + `/services/[service]` 페이지 | **641 / pass** |
+| Phase 42 | Environment Detail 드릴다운 `/api/environments/{env}` + `/environments/[env]` 페이지 | **651 / pass** |
+| Phase 43 | 전역 검색 `/api/search` + `/search` 페이지 + Sidebar 검색 입력창 | **664 / pass** |

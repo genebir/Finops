@@ -30,6 +30,7 @@ from .routers import (
     pipeline,
     resource_detail,
     savings,
+    search,
     service_breakdown,
     service_detail,
     budget,
@@ -108,3 +109,4 @@ app.include_router(anomaly_timeline.router)
 app.include_router(cloud_config.router)
 app.include_router(team_detail.router)
 app.include_router(pipeline.router)
+app.include_router(search.router)

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect, type FormEvent } from "react";
 import { useT } from "@/lib/i18n";
 import type { TranslationKey } from "@/lib/i18n";
 import LanguageToggle from "./LanguageToggle";
@@ -35,6 +35,7 @@ import {
   Prohibit,
   Rows,
   Play,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
 
 type NavItem = { href: string; labelKey: TranslationKey; Icon: React.ElementType };
@@ -218,6 +219,60 @@ function PinnedItem({ href, labelKey, Icon, active }: NavItem & { active: boolea
   );
 }
 
+function SidebarSearch() {
+  const t = useT();
+  const router = useRouter();
+  const [value, setValue] = useState("");
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const q = value.trim();
+    if (!q) return;
+    router.push(`/search?q=${encodeURIComponent(q)}`);
+  };
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      style={{
+        position: "relative",
+        margin: "0 8px 8px",
+      }}
+    >
+      <MagnifyingGlass
+        size={13}
+        weight="bold"
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "10px",
+          transform: "translateY(-50%)",
+          color: "var(--text-tertiary)",
+          pointerEvents: "none",
+        }}
+      />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={t("search.placeholder")}
+        aria-label={t("nav.search")}
+        style={{
+          width: "100%",
+          padding: "7px 10px 7px 28px",
+          fontSize: "12px",
+          fontFamily: "Inter, sans-serif",
+          color: "var(--text-primary)",
+          backgroundColor: "var(--bg-warm)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-button)",
+          outline: "none",
+        }}
+      />
+    </form>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
 
@@ -279,11 +334,16 @@ export default function Sidebar() {
         </p>
       </div>
 
+      {/* Search */}
+      <div style={{ paddingTop: "10px" }}>
+        <SidebarSearch />
+      </div>
+
       {/* Main nav */}
       <nav
         style={{
           flex: 1,
-          padding: "10px 8px",
+          padding: "4px 8px 10px",
           display: "flex",
           flexDirection: "column",
           gap: "2px",

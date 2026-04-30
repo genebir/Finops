@@ -2,7 +2,7 @@
 
 > 이 문서는 Claude Code가 본 프로젝트를 **처음부터 동일하게 재현**하는 데 필요한 모든 컨텍스트를 담고 있다.
 > Phase 1 → … → Phase 40 순서로 구현하며, 각 Phase는 이전 Phase 위에 증분 확장된다.
-> **현재 상태:** Phase 42 완료 — Environment Detail 드릴다운 `/api/environments/{env}` + `/environments/[env]` 페이지 + Env Breakdown 링크 연결, **651 tests pass**.
+> **현재 상태:** Phase 43 완료 — 전역 검색 `/api/search` + `/search` 페이지 + Sidebar 검색 입력창, **664 tests pass**.
 
 ---
 
@@ -1435,9 +1435,31 @@ uv run mypy dagster_project
 
 - **651 tests pass** ✅
 
+### Phase 43 — 전역 검색 (Global Search)
+
+- `api/routers/search.py` — `GET /api/search?q=<query>&limit=20`
+  - `resources`: resource_id/resource_name ILIKE 매칭, `dim_resource_inventory` 우선 사용 (없으면 `fact_daily_cost` 30일 윈도우 폴백)
+  - `teams`: team명 ILIKE 매칭 (당월 비용 + 리소스 수)
+  - `services`: service_name ILIKE 매칭 (당월 비용 + 카테고리 + 리소스 수)
+  - 빈 쿼리(`q=""` 또는 공백)는 빈 결과 반환 (전체 목록 금지)
+  - 카테고리당 최대 `limit//3 + 1` 행 (최대 10), SQL 인젝션 방지를 위해 `%s` 파라미터 바인딩만 사용
+- `api/main.py` — `search` 라우터 등록
+- `api/routers/__init__.py` — `search` 추가
+- `web-app/app/(dashboard)/search/page.tsx` — Server Component
+  - URL 파라미터 `?q=` 로 쿼리 수신, 빈 쿼리 시 EmptyState
+  - Teams / Services / Resources 카드별 표 (각 결과 행에 드릴다운 링크: `/teams/{team}`, `/services/{service}`, `/resources/{id}`)
+  - `total === 0` 시 "No matches" empty state
+- `web-app/components/layout/Sidebar.tsx` — 로고 아래 `SidebarSearch` 클라이언트 컴포넌트 추가
+  - `MagnifyingGlass` 아이콘 + 입력창, `<form onSubmit>` → `router.push("/search?q=...")`
+  - 공백만 입력 시 navigation 차단
+- `web-app/lib/i18n/translations.ts` — `page.search.*`, `search.*`, `nav.search` 번역 키 추가
+- `tests/test_api_search.py` (13개) — shape/empty query/whitespace/case-insensitive/limit cap/unknown query/total sum 검증
+
+- **664 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 42 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 43 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 
@@ -1475,6 +1497,7 @@ uv run mypy dagster_project
 | `/teams/[team]` | `/api/teams/{team}` | 팀 드릴다운: 트렌드, 서비스/환경/provider 분석, 리소스 |
 | `/services/[service]` | `/api/services/{service_name}` | 서비스 드릴다운: 트렌드, 팀/환경/provider 분석, 리소스 |
 | `/environments/[env]` | `/api/environments/{env}` | 환경 드릴다운: 트렌드, 팀/서비스/provider 분석, 리소스 |
+| `/search` | `/api/search` | 전역 검색 (resource/team/service ILIKE 매칭) |
 
 ### 구현 완료된 API 엔드포인트 전체 목록
 
@@ -1516,6 +1539,7 @@ uv run mypy dagster_project
 | `GET /api/cloud-config/status` | `routers/cloud_config.py` | `test_api_cloud_config.py` |
 | `GET /api/teams/{team}` | `routers/team_detail.py` | `test_api_team_detail.py` |
 | `GET /api/environments/{env}` | `routers/env_detail.py` | `test_api_env_detail.py` |
+| `GET /api/search` | `routers/search.py` | `test_api_search.py` |
 | `GET /health` | `main.py` | — |
 
 ---
@@ -1553,33 +1577,6 @@ uv run mypy dagster_project
 - `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
 
 **검증:** `601 + ~10 = ~611 tests pass`
-
----
-
-### Phase 43 — 전역 검색 (`/search` + `/api/search`)
-
-**목표:** 리소스 ID, 팀명, 서비스명으로 통합 검색
-
-**API: `GET /api/search?q=<query>&limit=20`**
-- `resources`: resource_id/resource_name 매칭 (cost_30d 포함)
-- `teams`: team명 매칭 (curr_month_cost 포함)
-- `services`: service_name 매칭 (cost_30d 포함)
-- 각 카테고리 최대 5건, 전체 최대 15건
-
-**파일:**
-- `api/routers/search.py` — `GET /api/search`
-  - PostgreSQL `ILIKE %s` 패턴 매칭
-  - `fact_daily_cost` + `dim_resource_inventory` JOIN
-- `web-app/app/(dashboard)/search/page.tsx` — Server Component
-  - URL 파라미터 `?q=` 로 쿼리 수신
-  - 리소스/팀/서비스 섹션별 결과 표시
-  - 결과 항목 클릭 → 해당 드릴다운 페이지 이동
-- `web-app/app/(dashboard)/Sidebar.tsx` — 검색 입력창 추가 (sidebar 상단, Enter → `/search?q=`)
-- `tests/test_api_search.py` (8개) — shape/empty/case-insensitive/limit 검증
-
-**구현 주의:**
-- SQL 인젝션 방지: `%{query}%` 는 반드시 파라미터 바인딩으로 (`cur.execute("... ILIKE %s", [f"%{q}%"])`)
-- 빈 쿼리(`q=""`)는 빈 결과 반환 (전체 목록 금지)
 
 ---
 

@@ -244,6 +244,17 @@ export const translations = {
   "page.budget_forecast.desc": { en: "linear EOM projection from MTD spend", ko: "MTD 지출 기반 선형 월말 예측" },
   "page.cost_trend.desc": { en: "cost time series and period-over-period comparison", ko: "비용 시계열 및 기간 비교 분석" },
   "page.chargeback.desc": { en: "Cost allocation report by team", ko: "팀별 비용 배분 리포트" },
+  "page.search.title": { en: "Search", ko: "검색" },
+  "page.search.desc": { en: "Search resources, teams, and services", ko: "리소스 · 팀 · 서비스 통합 검색" },
+  "page.search.empty_query": { en: "Type a query to search across resources, teams, and services.", ko: "리소스, 팀, 서비스를 검색할 키워드를 입력하세요." },
+  "page.search.no_results": { en: "No matches", ko: "일치하는 결과 없음" },
+  "page.search.no_results_desc": { en: "Try a shorter query or different keyword.", ko: "더 짧은 쿼리나 다른 키워드를 시도하세요." },
+  "search.placeholder": { en: "Search…", ko: "검색…" },
+  "search.section.resources": { en: "Resources", ko: "리소스" },
+  "search.section.teams": { en: "Teams", ko: "팀" },
+  "search.section.services": { en: "Services", ko: "서비스" },
+  "search.results_for": { en: "Results for", ko: "검색 결과" },
+  "nav.search": { en: "Search", ko: "검색" },
 
   // ─── Section headers ─────────────────────────────────────
   "section.cost_by_team": { en: "Cost by Team", ko: "팀별 비용" },
