@@ -1,6 +1,7 @@
 """FastAPI routers for all API routes."""
 
 from . import (
+    alert_rules,
     anomalies,
     budget,
     burn_rate,
@@ -25,6 +26,7 @@ from . import (
 )
 
 __all__ = [
+    "alert_rules",
     "anomalies",
     "budget",
     "burn_rate",

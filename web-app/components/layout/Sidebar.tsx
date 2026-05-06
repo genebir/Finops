@@ -36,6 +36,7 @@ import {
   Rows,
   Play,
   MagnifyingGlass,
+  SlidersHorizontal,
 } from "@phosphor-icons/react";
 
 type NavItem = { href: string; labelKey: TranslationKey; Icon: React.ElementType };
@@ -98,8 +99,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: "/pipeline",  labelKey: "nav.pipeline",  Icon: Play },
       { href: "/forecast",  labelKey: "nav.forecast",  Icon: TrendUp },
-      { href: "/alerts",    labelKey: "nav.alerts",    Icon: Bell },
-      { href: "/ops",       labelKey: "nav.ops",       Icon: Gauge },
+      { href: "/alerts",      labelKey: "nav.alerts",      Icon: Bell },
+      { href: "/alert-rules", labelKey: "nav.alert_rules", Icon: SlidersHorizontal },
+      { href: "/ops",         labelKey: "nav.ops",         Icon: Gauge },
     ],
   },
 ];

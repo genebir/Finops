@@ -32,6 +32,7 @@ export const translations = {
   "nav.operations": { en: "Operations", ko: "운영" },
   "nav.pipeline": { en: "Pipeline", ko: "파이프라인" },
   "nav.alerts": { en: "Alerts", ko: "알림" },
+  "nav.alert_rules": { en: "Alert Rules", ko: "알림 규칙" },
   "nav.ops": { en: "Ops", ko: "운영 현황" },
   "nav.cost_heatmap": { en: "Cost Heatmap", ko: "비용 히트맵" },
   "nav.cloud_config": { en: "Cloud Config", ko: "클라우드 설정" },

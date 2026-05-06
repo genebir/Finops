@@ -361,6 +361,20 @@ BASE_TABLE_DDL: dict[str, str] = {
             PRIMARY KEY (billing_month, team, provider)
         )
     """,
+    # 알림 규칙 (Phase 44)
+    "dim_alert_rules": """
+        CREATE TABLE IF NOT EXISTS dim_alert_rules (
+            id          BIGSERIAL        PRIMARY KEY,
+            rule_name   VARCHAR          NOT NULL UNIQUE,
+            team        VARCHAR,
+            resource_id VARCHAR,
+            metric      VARCHAR          NOT NULL,
+            threshold   DOUBLE PRECISION NOT NULL,
+            severity    VARCHAR          NOT NULL DEFAULT 'warning',
+            enabled     BOOLEAN          NOT NULL DEFAULT TRUE,
+            created_at  TIMESTAMPTZ      DEFAULT CURRENT_TIMESTAMP
+        )
+    """,
     # 운영 로그(Phase 12)
     "pipeline_run_log": """
         CREATE TABLE IF NOT EXISTS pipeline_run_log (

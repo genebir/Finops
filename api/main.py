@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .middleware import RequestContextMiddleware
 from .routers import (
+    alert_rules,
     alerts,
     anomalies,
     anomaly_timeline,
@@ -110,3 +111,4 @@ app.include_router(cloud_config.router)
 app.include_router(team_detail.router)
 app.include_router(pipeline.router)
 app.include_router(search.router)
+app.include_router(alert_rules.router)
