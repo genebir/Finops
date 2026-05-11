@@ -1,6 +1,7 @@
 import type {
   AlertHistoryData, AlertHistoryItem,
-  AnomaliesData, AssetListResponse, BudgetData, BudgetEntry, BudgetEntryList, BurnRateData,
+  AnomaliesData, AnomalyRootCause, AssetListResponse, BudgetData, BudgetEntry,
+  BudgetEntryList, BurnRateData,
   ChargebackData, CostHeatmapData, DataQualityData, ExplorerData, FiltersData, ForecastData,
   OpsHealthData, OpsRunsData, OverviewData, PipelinePreset, RecommendationsData,
   SavingsData, SettingItem, SettingsData, TriggerResponse,
@@ -57,6 +58,9 @@ export const api = {
 
   anomalies: (p?: { severity?: string; team?: string; env?: string }) =>
     get<AnomaliesData>("/api/anomalies", p),
+
+  anomalyRootCause: (resource_id: string, charge_date: string) =>
+    getFresh<AnomalyRootCause>("/api/anomaly-root-cause", { resource_id, charge_date }),
 
   forecast: () => get<ForecastData>("/api/forecast"),
 

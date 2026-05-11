@@ -1484,9 +1484,33 @@ uv run mypy dagster_project
 
 - **679 tests pass** ✅
 
+### Phase 45 — 비용 이상치 Root Cause 분석
+
+- `api/routers/anomaly_root_cause.py` — `GET /api/anomaly-root-cause?resource_id=X&charge_date=YYYY-MM-DD`
+  - 4개 휴리스틱 분류: `new_resource` / `cost_spike` / `peer_spike` / `unknown`
+  - `confidence` (0.0–1.0): 새 리소스 0.9 / 격리 spike 3×↑ 0.8 / 격리 spike 2×↑ 0.6 / peer spike 0.6 / unknown 0.3
+  - `history`: 동일 리소스 직전 7일 avg/max/min/days_observed/spike_ratio
+  - `peers`: 동일 service_name (자기 제외) 당일 avg/max/count + 7일 baseline 대비 spike 여부 (≥1.5×)
+  - `team_context`: 팀 전체 당일 비용 vs 직전 7일 일평균 (`team_change_pct`)
+  - 404: 해당 (resource_id, charge_date) 행 미존재
+- `api/main.py` — `anomaly_root_cause` 라우터 등록
+- `api/routers/__init__.py` — `anomaly_root_cause` 추가
+- `web-app/app/(dashboard)/anomalies/page.tsx` — Server Component (KPI + 초기 fetch만)
+- `web-app/app/(dashboard)/anomalies/AnomaliesClient.tsx` — Client Component
+  - 이상치 행 클릭 → 인라인 Root Cause 패널 (toggle + per-row cache)
+  - 패널: cause pill (색상 코딩) + confidence% + reason 텍스트
+  - 3-컬럼 fact grid (Target / Peers / Team) — emphasis 행은 critical 색상
+  - 로딩/에러 상태, 클릭 행 하이라이트
+- `web-app/lib/types.ts` — `AnomalyRootCause` 타입 추가
+- `web-app/lib/api.ts` — `anomalyRootCause(resource_id, charge_date)` 메서드 추가 (no-store)
+- `web-app/lib/i18n/translations.ts` — `section.root_cause`, `cause.*`, `label.*` 16개 키 추가 (EN/KO)
+- `tests/test_api_anomaly_root_cause.py` (11개) — 404, shape, 4가지 cause 분류, history/peers/team 값, 422 검증
+
+- **690 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 44 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 45 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 
@@ -1526,6 +1550,7 @@ uv run mypy dagster_project
 | `/environments/[env]` | `/api/environments/{env}` | 환경 드릴다운: 트렌드, 팀/서비스/provider 분석, 리소스 |
 | `/search` | `/api/search` | 전역 검색 (resource/team/service ILIKE 매칭) |
 | `/alert-rules` | `/api/alert-rules` (CRUD) | 알림 규칙 관리: team/resource별 cost_spike/anomaly_count/budget_pct 임계값, 인라인 CRUD + Enabled 토글 |
+| `/anomalies` (확장) | `/api/anomalies`, `/api/anomaly-root-cause` | 이상치 행 클릭 시 Root Cause 패널 인라인 표시 (cause/confidence/reason + Target/Peers/Team 비교) |
 
 ### 구현 완료된 API 엔드포인트 전체 목록
 
@@ -1569,6 +1594,7 @@ uv run mypy dagster_project
 | `GET /api/environments/{env}` | `routers/env_detail.py` | `test_api_env_detail.py` |
 | `GET /api/search` | `routers/search.py` | `test_api_search.py` |
 | `GET /api/alert-rules`, `POST`, `PUT /{id}`, `DELETE /{id}` | `routers/alert_rules.py` | `test_api_alert_rules.py` |
+| `GET /api/anomaly-root-cause` | `routers/anomaly_root_cause.py` | `test_api_anomaly_root_cause.py` |
 | `GET /health` | `main.py` | — |
 
 ---
@@ -1606,24 +1632,6 @@ uv run mypy dagster_project
 - `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
 
 **검증:** `601 + ~10 = ~611 tests pass`
-
----
-
-### Phase 45 — 비용 이상치 Root Cause 분석 (`/api/anomaly-root-cause`)
-
-**목표:** 특정 이상치 이벤트의 원인 추정 자동화
-
-**API: `GET /api/anomaly-root-cause?resource_id=X&charge_date=YYYY-MM-DD`**
-- 해당 resource_id의 당일 vs 직전 7일 평균 비용 비교
-- 같은 서비스의 다른 리소스들 당일 비용 (peer comparison)
-- 같은 팀의 당일 전체 비용 추이
-- 가능한 원인 힌트: `cost_spike` / `new_resource` / `peer_spike` / `unknown`
-- `confidence`: 0.0~1.0 신뢰도 점수
-
-**파일:**
-- `api/routers/anomaly_root_cause.py`
-- `web-app/app/(dashboard)/anomalies/page.tsx` — 이상치 행 클릭 시 Root Cause 패널 인라인 표시
-- `tests/test_api_anomaly_root_cause.py` (8개)
 
 ---
 

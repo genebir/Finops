@@ -20,6 +20,41 @@ export interface AnomalyItem {
 export interface AnomaliesData {
   items: AnomalyItem[]; total: number; critical: number; warning: number;
 }
+export interface AnomalyRootCause {
+  resource_id: string;
+  charge_date: string;
+  service_name: string;
+  team: string;
+  env: string;
+  provider: string;
+  target_cost: number;
+  history: {
+    avg_prior_7d: number;
+    max_prior_7d: number;
+    min_prior_7d: number;
+    days_observed: number;
+    spike_ratio: number | null;
+  };
+  peers: {
+    service_name: string;
+    peer_count: number;
+    peer_avg_cost: number;
+    peer_max_cost: number;
+    peer_baseline_daily: number;
+    peers_also_spiked: boolean;
+  };
+  team_context: {
+    team: string;
+    team_total_today: number;
+    team_avg_prior_7d: number;
+    team_change_pct: number | null;
+  };
+  root_cause: {
+    cause: "new_resource" | "cost_spike" | "peer_spike" | "unknown";
+    confidence: number;
+    reason: string;
+  };
+}
 export interface ForecastItem {
   resource_id: string; monthly_forecast: number;
   actual_cost: number | null; variance_pct: number | null;

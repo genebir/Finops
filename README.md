@@ -240,3 +240,4 @@ finops-platform/
 | Phase 42 | Environment Detail 드릴다운 `/api/environments/{env}` + `/environments/[env]` 페이지 | **651 / pass** |
 | Phase 43 | 전역 검색 `/api/search` + `/search` 페이지 + Sidebar 검색 입력창 | **664 / pass** |
 | Phase 44 | 알림 규칙 CRUD `/api/alert-rules` + `/alert-rules` 페이지 + `dim_alert_rules` 테이블 | **679 / pass** |
+| Phase 45 | 비용 이상치 Root Cause 분석 `/api/anomaly-root-cause` + Anomalies 페이지 인라인 패널 | **690 / pass** |

@@ -19,6 +19,7 @@ from .routers import (
     alert_rules,
     alerts,
     anomalies,
+    anomaly_root_cause,
     anomaly_timeline,
     cloud_config,
     budget_forecast,
@@ -78,6 +79,7 @@ def health() -> dict[str, str]:
 
 app.include_router(overview.router)
 app.include_router(anomalies.router)
+app.include_router(anomaly_root_cause.router)
 app.include_router(forecast.router)
 app.include_router(budget.router)
 app.include_router(cost_explorer.router)

@@ -3,6 +3,7 @@
 from . import (
     alert_rules,
     anomalies,
+    anomaly_root_cause,
     budget,
     burn_rate,
     chargeback,
@@ -28,6 +29,7 @@ from . import (
 __all__ = [
     "alert_rules",
     "anomalies",
+    "anomaly_root_cause",
     "budget",
     "burn_rate",
     "chargeback",
