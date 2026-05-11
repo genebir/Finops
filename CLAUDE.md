@@ -1457,9 +1457,36 @@ uv run mypy dagster_project
 
 - **664 tests pass** ✅
 
+### Phase 44 — 알림 규칙 CRUD (`/alert-rules` + `/api/alert-rules`)
+
+- `dagster_project/db_schema.py` — `dim_alert_rules` DDL 추가
+  - `id BIGSERIAL PK`, `rule_name VARCHAR UNIQUE NOT NULL`, `team` / `resource_id` (NULL 허용 = 전체 매칭)
+  - `metric VARCHAR NOT NULL` (`cost_spike` / `anomaly_count` / `budget_pct`), `threshold DOUBLE PRECISION NOT NULL`
+  - `severity VARCHAR DEFAULT 'warning'` (`warning` / `critical`), `enabled BOOLEAN DEFAULT TRUE`
+- `api/routers/alert_rules.py` — 풀 CRUD
+  - `GET /api/alert-rules?team=X&enabled=true|false` — 필터링 + summary(total/enabled/disabled)
+  - `POST /api/alert-rules` (201) — Pydantic Literal 검증, `UniqueViolation` → 409
+  - `PUT /api/alert-rules/{id}` — 부분 업데이트 (제공된 필드만 SET), 빈 body → 400, 미존재 → 404
+  - `DELETE /api/alert-rules/{id}` (204) — 미존재 → 404
+  - 모든 핸들러에서 `ensure_tables(conn, "dim_alert_rules")` 자가치유
+- `api/main.py` — `alert_rules` 라우터 등록
+- `api/routers/__init__.py` — `alert_rules` 추가
+- `web-app/app/(dashboard)/alert-rules/page.tsx` — Server Component
+  - KPI 카드 4개 (Total / Enabled / Disabled / Critical)
+- `web-app/app/(dashboard)/alert-rules/AlertRulesClient.tsx` — Client Component
+  - 규칙 표: name / scope (team·resource) / metric pill / threshold (인라인 편집) / SeverityBadge / Enabled 토글 / Edit+Delete
+  - "+ Add Rule" 인라인 폼 (rule_name / team / resource_id / metric select / threshold / severity select)
+  - Enabled 토글 — PUT으로 즉시 반영, ON/OFF 색상
+  - 삭제 확인 (Check/X 패턴), 409 에러 메시지 표시
+- `web-app/components/layout/Sidebar.tsx` — Operations 그룹에 "Alert Rules" 추가 (`SlidersHorizontal` 아이콘)
+- `web-app/lib/i18n/translations.ts` — `nav.alert_rules` 번역 키 추가 (EN/KO)
+- `tests/test_api_alert_rules.py` (15개) — table 존재, GET shape, 201/409/422/400/404/204, CRUD 왕복, team/enabled 필터 검증
+
+- **679 tests pass** ✅
+
 ---
 
-## 15. 현재 대시보드 페이지 현황 (Phase 43 기준)
+## 15. 현재 대시보드 페이지 현황 (Phase 44 기준)
 
 ### 구현 완료된 페이지 및 연결 API
 
@@ -1498,6 +1525,7 @@ uv run mypy dagster_project
 | `/services/[service]` | `/api/services/{service_name}` | 서비스 드릴다운: 트렌드, 팀/환경/provider 분석, 리소스 |
 | `/environments/[env]` | `/api/environments/{env}` | 환경 드릴다운: 트렌드, 팀/서비스/provider 분석, 리소스 |
 | `/search` | `/api/search` | 전역 검색 (resource/team/service ILIKE 매칭) |
+| `/alert-rules` | `/api/alert-rules` (CRUD) | 알림 규칙 관리: team/resource별 cost_spike/anomaly_count/budget_pct 임계값, 인라인 CRUD + Enabled 토글 |
 
 ### 구현 완료된 API 엔드포인트 전체 목록
 
@@ -1540,6 +1568,7 @@ uv run mypy dagster_project
 | `GET /api/teams/{team}` | `routers/team_detail.py` | `test_api_team_detail.py` |
 | `GET /api/environments/{env}` | `routers/env_detail.py` | `test_api_env_detail.py` |
 | `GET /api/search` | `routers/search.py` | `test_api_search.py` |
+| `GET /api/alert-rules`, `POST`, `PUT /{id}`, `DELETE /{id}` | `routers/alert_rules.py` | `test_api_alert_rules.py` |
 | `GET /health` | `main.py` | — |
 
 ---
@@ -1577,44 +1606,6 @@ uv run mypy dagster_project
 - `tests/test_api_service_detail.py` (10개) — shape/404/sorted/pct/months param 검증
 
 **검증:** `601 + ~10 = ~611 tests pass`
-
----
-
-### Phase 44 — 알림 규칙 CRUD (`/alert-rules` + `/api/alert-rules`)
-
-**목표:** 팀별·리소스별 커스텀 알림 임계값을 웹 UI에서 관리
-
-**DB 테이블: `dim_alert_rules`**
-```sql
-CREATE TABLE IF NOT EXISTS dim_alert_rules (
-    id          BIGSERIAL PRIMARY KEY,
-    rule_name   VARCHAR NOT NULL,
-    team        VARCHAR,           -- NULL = 전체 팀
-    resource_id VARCHAR,           -- NULL = 전체 리소스
-    metric      VARCHAR NOT NULL,  -- 'cost_spike', 'anomaly_count', 'budget_pct'
-    threshold   DOUBLE PRECISION NOT NULL,
-    severity    VARCHAR NOT NULL DEFAULT 'warning',  -- 'warning' | 'critical'
-    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at  TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-);
-```
-
-**API: `/api/alert-rules`**
-- `GET /api/alert-rules` — 전체 규칙 목록 (team/enabled 필터)
-- `POST /api/alert-rules` — 신규 규칙 (201, 규칙명 중복 409)
-- `PUT /api/alert-rules/{id}` — 규칙 수정
-- `DELETE /api/alert-rules/{id}` — 규칙 삭제 (204)
-
-**파일:**
-- `dagster_project/db_schema.py` — `dim_alert_rules` DDL 추가
-- `api/routers/alert_rules.py` — 풀 CRUD
-- `web-app/app/(dashboard)/alert-rules/AlertRulesClient.tsx` — Client Component
-  - 규칙 표: rule_name / team / metric / threshold / severity / enabled / Edit+Delete
-  - "Add Rule" 인라인 폼
-  - enabled 토글 (PUT으로 즉시 반영)
-- `web-app/app/(dashboard)/alert-rules/page.tsx` — Server Component 래퍼
-- `Sidebar.tsx` — "Alert Rules" 항목 추가 (Alerts 근처)
-- `tests/test_api_alert_rules.py` (10개) — CRUD 왕복, 409, 204 검증
 
 ---
 
